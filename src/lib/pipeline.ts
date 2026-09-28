@@ -8,7 +8,8 @@ import { renderQueue } from './queue';
 import { extractAudio, renderClip, generateThumbnail } from './ffmpeg';
 import { probeDuration, probeHasAudio } from './probe';
 import { transcribeAudio, findHighlights } from './gemini';
-import { writeClipAss } from './captions';
+import { SPLIT_SCREEN_CAPTIONS, writeClipAss } from './captions';
+import { planFraming, type Framing } from './smartCrop';
 import { computeWordTimings, whisperModelIsCached, type ClipTiming } from './wordTiming';
 import { downloadFromUrl } from './youtube';
 import type { Job, JobStatus, RenderedClip, TranscriptSegment } from './types';
@@ -171,9 +172,12 @@ export async function processJob(jobId: string): Promise<void> {
       const assPath = path.join(workDir, `clip_${index}.ass`);
       const outPath = path.join(outDir, filename);
 
+      let layout: Framing['layout'];
       try {
-        writeClipAss(words, start, end, assPath);
-        await renderClip({ sourcePath, start, end, assPath, outPath });
+        const framing = await planFraming(sourcePath, start, end);
+        layout = framing.layout;
+        writeClipAss(words, start, end, assPath, layout === 'split' ? SPLIT_SCREEN_CAPTIONS : undefined);
+        await renderClip({ sourcePath, start, end, assPath, outPath, framing });
       } catch (err) {
         console.error(`[pipeline] job ${jobId}: rendering ${filename} failed:`, err);
         failures.push(errorMessage(err));
@@ -199,10 +203,15 @@ export async function processJob(jobId: string): Promise<void> {
         filename,
         durationSec: end - start,
         wordTiming: exact ? 'exact' : 'estimated',
+        layout,
       });
 
       jobStore.update(jobId, { clips: [...clips] });
-      logProgress(jobId, 'rendering', `Klar: "${suggestion.title}" (${index}/${suggestions.length})`);
+      logProgress(
+        jobId,
+        'rendering',
+        `Klar: "${suggestion.title}" (${index}/${suggestions.length}${layout === 'split' ? ', split screen' : ''})`,
+      );
     }
 
     if (clips.length === 0) {

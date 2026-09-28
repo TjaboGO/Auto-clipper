@@ -93,7 +93,12 @@ export interface AssStyleOptions {
   fontSize?: number;
   /** distance from the bottom edge, in px, on the 1080x1920 output canvas */
   marginV?: number;
+  /** ASS numpad alignment: 2 = bottom center (default), 5 = middle center */
+  alignment?: number;
 }
+
+/** Captions on the seam between the two people of a split screen. */
+export const SPLIT_SCREEN_CAPTIONS: AssStyleOptions = { alignment: 5, marginV: 0 };
 
 /**
  * Build a TikTok/CapCut-style caption file (.ass) for ONE output clip: bold
@@ -113,6 +118,7 @@ export function buildClipAss(
 ): string {
   const fontSize = style.fontSize ?? 92;
   const marginV = style.marginV ?? 480;
+  const alignment = style.alignment ?? 2;
   const clipLength = clipEnd - clipStart;
 
   const header = `[Script Info]
@@ -124,7 +130,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,${CAPTION_FONT},${fontSize},${TEXT_COLOUR},${TEXT_COLOUR},${OUTLINE_COLOUR},${SHADOW_COLOUR},0,0,0,0,100,100,0,0,1,7,3,2,90,90,${marginV},1
+Style: Caption,${CAPTION_FONT},${fontSize},${TEXT_COLOUR},${TEXT_COLOUR},${OUTLINE_COLOUR},${SHADOW_COLOUR},0,0,0,0,100,100,0,0,1,7,3,${alignment},90,90,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

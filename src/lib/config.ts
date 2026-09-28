@@ -44,6 +44,8 @@ export const config = {
   // working directory of the standalone server in the Docker image.
   fontsDir: path.join(process.cwd(), 'assets', 'fonts'),
   smartCropScript: path.join(process.cwd(), 'scripts', 'smart_crop.py'),
+  // YuNet face detector (OpenCV Zoo, MIT license) used by smart_crop.py.
+  faceModel: path.join(process.cwd(), 'assets', 'models', 'face_detection_yunet_2023mar.onnx'),
   wordTimingScript: path.join(process.cwd(), 'scripts', 'word_timing.py'),
 };
 

@@ -6,7 +6,8 @@ och appen:
 1. Transkriberar hela ljudet med Gemini
 2. Låter Gemini agera videoredaktör och plockar ut de bästa, mest klippbara ögonblicken
 3. Klipper ut varje ögonblick, beskär det till stående 9:16-format och följer den som pratar i
-   bild (ansiktsspårning med OpenCV)
+   bild (ansiktsspårning med OpenCV). Pratar två personer i snabb växling delas bilden istället, med
+   en person upptill och en nedtill
 4. Bränner in animerade texter i CapCut/TikTok-stil, några ord i taget med ordet som sägs just nu
    i guld. Whisper lyssnar på varje klipp så att orden lyser upp exakt när de sägs, och klippen
    börjar och slutar på riktiga ordgränser
@@ -63,9 +64,14 @@ Basic Auth i Coolify.
   håller sig exakta även för långa videor. Sen får Gemini (som redaktör) välja ut de bästa klippen
   med titel, bildtext, hashtags och ett "virality score". Båda anropen använder ett JSON-schema,
   och kvotfel och tillfälliga serverfel försöks om automatiskt.
-- `scripts/smart_crop.py` - låter ffmpeg avkoda och skala ner bilder ur klippet (fyra per sekund)
-  och kör ansiktsdetektering (OpenCV Haar cascade) på dem. Kameran panorerar mjukt när personen
-  rör sig lite, och klipper direkt när någon annan tar över bilden eller källan byter vinkel.
+- `scripts/smart_crop.py` - bestämmer hur varje klipp beskärs. ffmpeg avkodar och skalar ner tio
+  bilder per sekund ur klippet, och YuNet (OpenCV:s ansiktsdetektor) hittar ansiktena och var ögon
+  och mun sitter. Varje person får ett eget spår genom klippet. När det hörs tal jämförs
+  munrörelserna för att se vem som pratar, och kameran klipper till den personen. Ett kort "ja"
+  från någon annan räcker inte för ett byte. Rör sig personen panorerar kameran mjukt. Pratar två
+  personer i snabb växling blir klippet split screen istället, och texten hamnar i skarven mellan
+  dem. Modellen (MIT-licens) ligger i `assets/models`. Saknas den används OpenCV:s äldre
+  Haar-detektor, som bara följer det största ansiktet.
 - `scripts/word_timing.py` + `src/lib/wordTiming.ts` - när Gemini valt klippen lyssnar Whisper
   (faster-whisper) på vart och ett och säger när varje ord sägs. Orden matchas mot Geminis text
   (felhörda, missade och extra ord hanteras, liksom sammansatta ord som delats olika), och
@@ -99,9 +105,9 @@ Basic Auth i Coolify.
   klippen (inte hela videon). Med `small` tar det ungefär en halv till ett par minuter per jobb
   beroende på servern, och behöver runt 1 GB RAM medan det körs. På en liten server: sätt
   `WHISPER_MODEL=base`, eller `WORD_TIMING=off` för att stänga av det.
-- **Ansiktsspårningen vet inte vem som pratar.** Syns två personer i samma bild följer kameran en
-  av dem (den största) istället för att hoppa fram och tillbaka. Klipper källan mellan personer
-  följer den med.
+- **Vem som pratar är en gissning.** Appen tittar på munrörelser medan det hörs tal, så den kan ta
+  fel, till exempel om den som pratar syns från sidan eller om någon annan skrattar eller tuggar.
+  Split screen bestäms för hela klippet och kan inte slås av och på mitt i det.
 - **Källvideon raderas när jobbet är klart.** Bara de färdiga klippen sparas, annars fylls disken
   snabbt. Vill du köra om en video får du ladda upp den igen.
 - **En kö-arbetare i taget som standard** (`QUEUE_CONCURRENCY=1`). Höj den om servern har gott om
@@ -126,7 +132,8 @@ ordtiming, `yt-dlp` för YouTube-nedladdning.
 ## Plan framåt
 
 1. ~~Exakt ordtiming och rena klippkanter~~ (klar)
-2. Bättre ansiktsföljning: bättre ansiktsdetektor, följa den som pratar, split screen när två pratar
+2. ~~Bättre ansiktsföljning: bättre ansiktsdetektor, följa den som pratar, split screen när två
+   pratar~~ (klar)
 3. Enkel redigerare: flytta start och slut, rätta ord i texten, rendera om ett klipp
 4. Fler val: klipplängd, format (1:1, 16:9), sökruta ("hitta ögonblick om X"), textstilar
 5. Låta Gemini titta på videon, så det funkar även för innehåll utan prat

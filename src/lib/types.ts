@@ -43,6 +43,8 @@ export interface RenderedClip extends ClipSuggestion {
   durationSec: number;
   /** 'exact': word times from Whisper. 'estimated': split from Gemini's segment times. */
   wordTiming?: 'exact' | 'estimated';
+  /** How the clip is framed: following the speaker, split screen, or letterboxed. */
+  layout?: 'single' | 'split' | 'letterbox';
 }
 
 export interface JobProgressStep {
