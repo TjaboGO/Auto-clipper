@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { config } from './config';
 import { run } from './exec';
 import { probeDimensions } from './probe';
 import { computeCropKeyframes, keyframesToCropXExpr } from './smartCrop';
@@ -9,11 +10,20 @@ import { escapeFfmpegFilterPath } from './captions';
 const OUTPUT_WIDTH = 1080;
 const OUTPUT_HEIGHT = 1920;
 
-/** Extract a small mono mp3 track from a video, for uploading to Gemini. */
-export async function extractAudio(videoPath: string, outPath: string): Promise<void> {
+/**
+ * Extract a small mono mp3 track from a video, for uploading to Gemini.
+ * Pass `start`/`duration` (seconds) to extract only that part.
+ */
+export async function extractAudio(
+  videoPath: string,
+  outPath: string,
+  range?: { start: number; duration: number },
+): Promise<void> {
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  const seek = range ? ['-ss', String(range.start), '-t', String(range.duration)] : [];
   await run('ffmpeg', [
     '-y',
+    ...seek,
     '-i', videoPath,
     '-vn',
     '-ac', '1',
@@ -35,20 +45,21 @@ export interface RenderClipOptions {
  * Render one final vertical clip in a single ffmpeg pass:
  *  1. trims [start,end] out of the source
  *  2. reframes to 9:16 - face-tracked smart crop if the source is
- *     landscape, or scale+letterbox if it's already portrait/square
+ *     wider than 9:16, or scale+letterbox if it's already that narrow
  *  3. burns in the word-highlighted .ass captions
  */
 export async function renderClip(opts: RenderClipOptions): Promise<void> {
   const { sourcePath, start, end, assPath, outPath } = opts;
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
-  const { width, height } = await probeDimensions(sourcePath);
+  const dims = await probeDimensions(sourcePath);
+  const { width, height } = dims;
   const isLandscape = width / height > OUTPUT_WIDTH / OUTPUT_HEIGHT;
 
   let visualFilter: string;
   if (isLandscape) {
     const cropWidth = Math.max(2, Math.floor((height * OUTPUT_WIDTH) / OUTPUT_HEIGHT / 2) * 2);
-    const keyframes = await computeCropKeyframes(sourcePath, start, end);
+    const keyframes = await computeCropKeyframes(sourcePath, start, end, dims);
     const xExpr = keyframesToCropXExpr(keyframes, cropWidth, width);
     visualFilter = `crop=w=${cropWidth}:h=${height}:x='${xExpr}':y=0,scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}`;
   } else {
@@ -57,8 +68,10 @@ export async function renderClip(opts: RenderClipOptions): Promise<void> {
       `pad=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black`;
   }
 
-  const assFilter = `ass=filename='${escapeFfmpegFilterPath(assPath)}'`;
-  const filterChain = `${visualFilter},${assFilter}`;
+  const assFilter =
+    `ass=filename='${escapeFfmpegFilterPath(assPath)}'` +
+    `:fontsdir='${escapeFfmpegFilterPath(config.fontsDir)}'`;
+  const filterChain = `${visualFilter},setsar=1,${assFilter}`;
 
   await run('ffmpeg', [
     '-y',

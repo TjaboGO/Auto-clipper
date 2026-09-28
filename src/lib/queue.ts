@@ -34,4 +34,7 @@ class Queue {
   }
 }
 
-export const renderQueue = new Queue(config.queueConcurrency);
+// Process-wide singleton (see jobStore.ts for why it lives on globalThis):
+// a second queue instance would let two renders run at once.
+const globalForQueue = globalThis as unknown as { __autoClipperQueue?: Queue };
+export const renderQueue = (globalForQueue.__autoClipperQueue ??= new Queue(config.queueConcurrency));

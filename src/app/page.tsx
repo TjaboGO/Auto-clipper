@@ -1,4 +1,5 @@
 import { UploadForm } from '@/components/UploadForm';
+import { RecentJobs } from '@/components/RecentJobs';
 
 export default function HomePage() {
   return (
@@ -14,6 +15,7 @@ export default function HomePage() {
         </p>
       </div>
       <UploadForm />
+      <RecentJobs />
     </main>
   );
 }

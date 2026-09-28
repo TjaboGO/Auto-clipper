@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { Readable } from 'stream';
-import { jobOutputDir, isSafeSegment } from '@/lib/paths';
+import { config } from '@/lib/config';
+import { isSafeSegment } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 
@@ -12,52 +13,65 @@ const MIME_TYPES: Record<string, string> = {
   '.jpeg': 'image/jpeg',
 };
 
+function streamFile(filePath: string, range?: { start: number; end: number }): ReadableStream {
+  return Readable.toWeb(fs.createReadStream(filePath, range)) as unknown as ReadableStream;
+}
+
 /** Serve a rendered clip (or its thumbnail) with basic Range support. */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string; file: string } },
+  { params }: { params: Promise<{ id: string; file: string }> },
 ) {
-  if (!isSafeSegment(params.id) || !isSafeSegment(params.file)) {
+  const { id, file } = await params;
+  if (!isSafeSegment(id) || !isSafeSegment(file)) {
     return NextResponse.json({ error: 'Ogiltig sökväg.' }, { status: 400 });
   }
 
-  const filePath = path.join(jobOutputDir(params.id), params.file);
+  const filePath = path.join(config.outputDir, id, file);
   if (!fs.existsSync(filePath)) {
     return NextResponse.json({ error: 'Filen hittades inte.' }, { status: 404 });
   }
 
-  const stat = fs.statSync(filePath);
+  const { size } = fs.statSync(filePath);
   const ext = path.extname(filePath).toLowerCase();
   const contentType = MIME_TYPES[ext] || 'application/octet-stream';
   const range = req.headers.get('range');
 
   if (range) {
-    const match = /bytes=(\d+)-(\d+)?/.exec(range);
-    const start = match ? parseInt(match[1], 10) : 0;
-    const end = match && match[2] ? parseInt(match[2], 10) : stat.size - 1;
-    const chunkSize = end - start + 1;
-    const nodeStream = fs.createReadStream(filePath, { start, end });
-    const webStream = Readable.toWeb(nodeStream) as unknown as ReadableStream;
+    // "bytes=START-END", "bytes=START-" or "bytes=-SUFFIX"
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+    let start = NaN;
+    let end = NaN;
+    if (match && match[1]) {
+      start = parseInt(match[1], 10);
+      end = match[2] ? Math.min(parseInt(match[2], 10), size - 1) : size - 1;
+    } else if (match && match[2]) {
+      start = Math.max(0, size - parseInt(match[2], 10));
+      end = size - 1;
+    }
+    if (Number.isNaN(start) || start >= size || end < start) {
+      return new NextResponse(null, {
+        status: 416,
+        headers: { 'Content-Range': `bytes */${size}` },
+      });
+    }
 
-    return new NextResponse(webStream, {
+    return new NextResponse(streamFile(filePath, { start, end }), {
       status: 206,
       headers: {
-        'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+        'Content-Range': `bytes ${start}-${end}/${size}`,
         'Accept-Ranges': 'bytes',
-        'Content-Length': String(chunkSize),
+        'Content-Length': String(end - start + 1),
         'Content-Type': contentType,
         'Cache-Control': 'no-store',
       },
     });
   }
 
-  const nodeStream = fs.createReadStream(filePath);
-  const webStream = Readable.toWeb(nodeStream) as unknown as ReadableStream;
-
-  return new NextResponse(webStream, {
+  return new NextResponse(streamFile(filePath), {
     status: 200,
     headers: {
-      'Content-Length': String(stat.size),
+      'Content-Length': String(size),
       'Content-Type': contentType,
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'no-store',

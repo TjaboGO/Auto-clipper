@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { JobProgress } from '@/components/JobProgress';
 import { ClipCard } from '@/components/ClipCard';
 
@@ -20,12 +21,14 @@ interface JobData {
   status: string;
   progress: { step: string; message: string; at: string }[];
   clips?: Clip[];
+  suggestions?: unknown[];
   error?: string;
   clipCount: number;
   source: { type: string; originalName?: string; url?: string };
 }
 
-export default function JobPage({ params }: { params: { id: string } }) {
+export default function JobPage() {
+  const { id } = useParams<{ id: string }>();
   const [job, setJob] = useState<JobData | null>(null);
   const [notFound, setNotFound] = useState(false);
 
@@ -35,7 +38,7 @@ export default function JobPage({ params }: { params: { id: string } }) {
 
     async function poll() {
       try {
-        const res = await fetch(`/api/jobs/${params.id}`, { cache: 'no-store' });
+        const res = await fetch(`/api/jobs/${id}`, { cache: 'no-store' });
         if (res.status === 404) {
           if (!cancelled) setNotFound(true);
           return;
@@ -56,7 +59,7 @@ export default function JobPage({ params }: { params: { id: string } }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [params.id]);
+  }, [id]);
 
   if (notFound) {
     return (
@@ -75,6 +78,8 @@ export default function JobPage({ params }: { params: { id: string } }) {
 
   const isDone = job.status === 'done';
   const isError = job.status === 'error';
+  const clips = job.clips ?? [];
+  const planned = job.suggestions?.length;
 
   return (
     <main className="max-w-5xl mx-auto px-4 py-12 md:py-16">
@@ -84,23 +89,25 @@ export default function JobPage({ params }: { params: { id: string } }) {
 
       <h1 className="text-2xl font-bold mt-4 mb-8">
         {isDone
-          ? `${job.clips?.length ?? 0} klipp klara`
+          ? `${clips.length} klipp klara`
           : isError
             ? 'Något gick fel'
-            : 'Skapar dina klipp ...'}
+            : clips.length > 0 && planned
+              ? `Skapar dina klipp ... (${clips.length} av ${planned} klara)`
+              : 'Skapar dina klipp ...'}
       </h1>
 
       {!isDone && <JobProgress steps={job.progress} isError={isError} error={job.error} />}
 
-      {isDone && job.clips && job.clips.length > 0 && (
+      {clips.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
-          {job.clips.map((clip) => (
+          {clips.map((clip) => (
             <ClipCard key={clip.id} jobId={job.id} clip={clip} />
           ))}
         </div>
       )}
 
-      {isDone && (!job.clips || job.clips.length === 0) && (
+      {isDone && clips.length === 0 && (
         <p className="text-gray-400 mt-8">Inga klipp kunde skapas från den här videon.</p>
       )}
     </main>

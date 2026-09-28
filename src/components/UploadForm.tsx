@@ -5,6 +5,42 @@ import { useRouter } from 'next/navigation';
 
 type Mode = 'upload' | 'youtube';
 
+interface CreateJobResponse {
+  jobId?: string;
+  error?: string;
+}
+
+/**
+ * Send the video as the raw request body (the server streams it straight to
+ * disk) and report upload progress, which fetch() can't do.
+ */
+function uploadFile(
+  file: File,
+  clipCount: number,
+  onProgress: (fraction: number) => void,
+): Promise<{ ok: boolean; data: CreateJobResponse }> {
+  return new Promise((resolve, reject) => {
+    const params = new URLSearchParams({ filename: file.name, clipCount: String(clipCount) });
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/jobs?${params}`);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      let data: CreateJobResponse = {};
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        data = { error: `Servern svarade med ${xhr.status}.` };
+      }
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, data });
+    };
+    xhr.onerror = () => reject(new Error('Uppladdningen misslyckades. Kolla anslutningen.'));
+    xhr.send(file);
+  });
+}
+
 export function UploadForm() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>('upload');
@@ -12,6 +48,7 @@ export function UploadForm() {
   const [url, setUrl] = useState('');
   const [clipCount, setClipCount] = useState(6);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
@@ -29,28 +66,33 @@ export function UploadForm() {
 
     setSubmitting(true);
     try {
-      let res: Response;
+      let result: { ok: boolean; data: CreateJobResponse };
       if (mode === 'upload' && file) {
-        const form = new FormData();
-        form.append('file', file);
-        form.append('clipCount', String(clipCount));
-        res = await fetch('/api/jobs', { method: 'POST', body: form });
+        setUploadProgress(0);
+        result = await uploadFile(file, clipCount, setUploadProgress);
       } else {
-        res = await fetch('/api/jobs', {
+        const res = await fetch('/api/jobs', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ youtubeUrl: url.trim(), clipCount }),
         });
+        result = { ok: res.ok, data: await res.json() };
       }
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Något gick fel.');
-      router.push(`/jobs/${data.jobId}`);
+      if (!result.ok || !result.data.jobId) throw new Error(result.data.error || 'Något gick fel.');
+      router.push(`/jobs/${result.data.jobId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Något gick fel.');
       setSubmitting(false);
+      setUploadProgress(null);
     }
   }
+
+  const buttonLabel = !submitting
+    ? 'Skapa klipp'
+    : uploadProgress !== null && uploadProgress < 1
+      ? `Laddar upp ... ${Math.round(uploadProgress * 100)}%`
+      : 'Startar ...';
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-xl mx-auto">
@@ -111,9 +153,16 @@ export function UploadForm() {
       <button
         type="submit"
         disabled={submitting}
-        className="w-full rounded-xl2 bg-accent-500 hover:bg-accent-400 disabled:opacity-50 disabled:cursor-not-allowed py-4 font-medium transition-colors"
+        className="relative w-full overflow-hidden rounded-xl2 bg-accent-500 hover:bg-accent-400 disabled:opacity-60 disabled:cursor-not-allowed py-4 font-medium transition-colors"
       >
-        {submitting ? 'Startar ...' : 'Skapa klipp'}
+        {uploadProgress !== null && (
+          <span
+            className="absolute inset-y-0 left-0 bg-accent-600 transition-[width]"
+            style={{ width: `${Math.round(uploadProgress * 100)}%` }}
+            aria-hidden
+          />
+        )}
+        <span className="relative tabular-nums">{buttonLabel}</span>
       </button>
     </form>
   );

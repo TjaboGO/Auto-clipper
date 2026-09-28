@@ -1,48 +1,101 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { GoogleAIFileManager, FileState } from '@google/generative-ai/server';
+import path from 'path';
+import {
+  ApiError,
+  FileState,
+  FinishReason,
+  GoogleGenAI,
+  ThinkingLevel,
+  Type,
+  createPartFromUri,
+  type ContentListUnion,
+  type Schema,
+  type ThinkingConfig,
+} from '@google/genai';
 import { config } from './config';
 import type { ClipSuggestion, TranscriptSegment } from './types';
 
-function client() {
+let cachedClient: GoogleGenAI | null = null;
+
+function client(): GoogleGenAI {
   if (!config.geminiApiKey) {
     throw new Error(
       'GEMINI_API_KEY is not set. Get a key at https://aistudio.google.com/apikey and add it to your .env file.',
     );
   }
-  return new GoogleGenerativeAI(config.geminiApiKey);
+  if (!cachedClient) {
+    cachedClient = new GoogleGenAI({
+      apiKey: config.geminiApiKey,
+      // Retry rate limits (429) and transient server errors with backoff.
+      httpOptions: { retryOptions: { attempts: 5, initialDelay: 2, maxDelay: 60 } },
+    });
+  }
+  return cachedClient;
 }
 
-function fileManager() {
-  if (!config.geminiApiKey) {
-    throw new Error('GEMINI_API_KEY is not set.');
+/** Gemini 3+ models take a thinking level; older models keep their defaults. */
+function thinking(level: ThinkingLevel): ThinkingConfig | undefined {
+  const major = /^gemini-(\d+)/.exec(config.geminiModel)?.[1];
+  return major && Number(major) >= 3 ? { thinkingLevel: level } : undefined;
+}
+
+/** Turn API errors into messages that say what to fix (shown in the UI). */
+function explainError(err: unknown): Error {
+  if (err instanceof ApiError) {
+    if (err.status === 400 && /api key/i.test(err.message)) {
+      return new Error('Gemini godkände inte API-nyckeln. Kolla GEMINI_API_KEY.');
+    }
+    if (err.status === 403) {
+      return new Error(
+        `Gemini nekade åtkomst (403). Kolla att API-nyckeln är giltig och får använda ${config.geminiModel}.`,
+      );
+    }
+    if (err.status === 404) {
+      return new Error(`Gemini hittar inte modellen "${config.geminiModel}". Kolla GEMINI_MODEL.`);
+    }
+    if (err.status === 429) {
+      return new Error('Gemini-kvoten är slut just nu (429). Vänta en stund och försök igen.');
+    }
+    return new Error(`Gemini svarade med fel ${err.status}: ${err.message}`);
   }
-  return new GoogleAIFileManager(config.geminiApiKey);
+  return err instanceof Error ? err : new Error(String(err));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface UploadedFile {
+  name: string;
+  uri: string;
+  mimeType: string;
 }
 
 /**
- * Upload a (small) audio file to Gemini's File API and wait until it's
- * ready to be referenced in a generateContent call. We upload audio only
- * (not the full video) - it's enough for transcription + moment-picking,
- * uploads faster, and stays well under Gemini's inline/file size limits
- * even for long source videos.
+ * Upload an audio file to Gemini's File API and wait until it's ready to be
+ * referenced in a generateContent call. We upload audio only (not the full
+ * video) - it's enough for transcription, uploads faster, and stays well
+ * under Gemini's file size limits.
  */
-async function uploadAudio(audioPath: string): Promise<{ uri: string; mimeType: string }> {
-  const manager = fileManager();
-  const uploadResult = await manager.uploadFile(audioPath, {
-    mimeType: 'audio/mp3',
-    displayName: `auto-clipper-${Date.now()}`,
+async function uploadAudio(audioPath: string): Promise<UploadedFile> {
+  const ai = client();
+  let file = await ai.files.upload({
+    file: audioPath,
+    config: { mimeType: 'audio/mp3', displayName: `auto-clipper-${path.basename(audioPath)}` },
   });
 
-  let file = uploadResult.file;
   // Freshly uploaded files can briefly be in PROCESSING state.
-  while (file.state === FileState.PROCESSING) {
-    await new Promise((r) => setTimeout(r, 2000));
-    file = await manager.getFile(file.name);
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (file.state === FileState.PROCESSING && file.name) {
+    if (Date.now() > deadline) {
+      throw new Error('Gemini took too long to process the uploaded audio file.');
+    }
+    await sleep(2000);
+    file = await ai.files.get({ name: file.name });
   }
-  if (file.state === FileState.FAILED) {
+  if (file.state === FileState.FAILED || !file.name || !file.uri) {
     throw new Error('Gemini failed to process the uploaded audio file.');
   }
-  return { uri: file.uri, mimeType: file.mimeType };
+  return { name: file.name, uri: file.uri, mimeType: file.mimeType || 'audio/mp3' };
 }
 
 /** Strip ```json ... ``` fences some models add despite JSON mode, and parse. */
@@ -54,45 +107,153 @@ function parseJsonLoose<T>(raw: string): T {
 }
 
 /**
- * Transcribe an audio file with Gemini, returning timestamped segments
- * that cover the whole clip. Gemini's timestamps are sentence/phrase-level
- * (not guaranteed word-perfect), which is what the caption renderer and
- * highlight-picker are built to expect - see captions.ts for how word
- * timing is approximated from these segments.
+ * Ask Gemini for JSON matching `schema`. HTTP-level failures are retried by
+ * the client; this retries once more if the model returns something that
+ * isn't usable JSON (cut off, empty, malformed).
  */
-export async function transcribeAudio(audioPath: string): Promise<TranscriptSegment[]> {
-  const { uri, mimeType } = await uploadAudio(audioPath);
-  const model = client().getGenerativeModel({
-    model: config.geminiModel,
-    generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
-  });
+async function generateJson<T>(
+  contents: ContentListUnion,
+  schema: Schema,
+  level: ThinkingLevel,
+): Promise<T> {
+  let lastError: Error = new Error('Gemini returned no usable answer.');
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const response = await client().models.generateContent({
+      model: config.geminiModel,
+      contents,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: schema,
+        thinkingConfig: thinking(level),
+      },
+    });
 
-  const prompt = `You are a professional transcriptionist. Listen to the attached audio in full \
-and produce a complete transcript broken into short natural segments (roughly one clause or \
-sentence each, about 3-14 words).
+    const blockReason = response.promptFeedback?.blockReason;
+    if (blockReason) {
+      throw new Error(`Gemini vägrade svara (${blockReason}).`);
+    }
+    const finishReason = response.candidates?.[0]?.finishReason;
+    const text = response.text;
+    if (finishReason === FinishReason.MAX_TOKENS) {
+      lastError = new Error('Geminis svar blev avklippt (för långt). Försök med en kortare video.');
+      continue;
+    }
+    if (!text) {
+      lastError = new Error(`Gemini gav inget svar (${finishReason ?? 'okänd orsak'}).`);
+      continue;
+    }
+    try {
+      return parseJsonLoose<T>(text);
+    } catch {
+      lastError = new Error('Gemini svarade med ogiltig JSON.');
+    }
+  }
+  throw lastError;
+}
+
+const transcriptSchema: Schema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      start: { type: Type.NUMBER, description: 'Start time in seconds from the start of the audio.' },
+      end: { type: Type.NUMBER, description: 'End time in seconds from the start of the audio.' },
+      text: { type: Type.STRING, description: 'What is said in this segment.' },
+    },
+    required: ['start', 'end', 'text'],
+    propertyOrdering: ['start', 'end', 'text'],
+  },
+};
+
+/**
+ * Transcribe one (up to ~10 minute) audio file with Gemini, returning
+ * timestamped segments relative to the start of that file. Gemini's
+ * timestamps are sentence/phrase-level (not guaranteed word-perfect), which
+ * is what the caption renderer and highlight-picker are built to expect -
+ * see captions.ts for how word timing is approximated from these segments.
+ *
+ * Returns an empty array if nothing is said (music, silence).
+ */
+export async function transcribeAudio(
+  audioPath: string,
+  durationSec: number,
+): Promise<TranscriptSegment[]> {
+  let uploaded: UploadedFile | undefined;
+  try {
+    uploaded = await uploadAudio(audioPath);
+
+    const prompt = `You are a professional transcriptionist. The attached audio is \
+${durationSec.toFixed(1)} seconds long. Listen to all of it and produce a complete transcript \
+broken into short natural segments (roughly one clause or sentence each, about 3-14 words).
 
 For every segment give the start and end time in seconds measured from the very beginning of \
 the audio, accurate to within half a second. Segments must be in chronological order, must not \
-overlap, and together must cover the entire audio from start to finish (do not skip filler \
-words, false starts, or cross-talk - transcribe what is actually said). Keep the original \
-spoken language, do not translate.
+overlap, and must stay within 0 and ${durationSec.toFixed(1)} seconds. Cover everything that is \
+said from start to finish (do not skip filler words, false starts, or cross-talk - transcribe \
+what is actually said). Keep the original spoken language, do not translate. If nobody speaks, \
+return an empty array.`;
 
-Respond with ONLY a JSON array, no commentary, matching exactly this shape:
-[{"start": 0.0, "end": 2.4, "text": "..."}, ...]`;
-
-  const result = await model.generateContent([
-    { fileData: { fileUri: uri, mimeType } },
-    { text: prompt },
-  ]);
-
-  const segments = parseJsonLoose<TranscriptSegment[]>(result.response.text());
-  if (!Array.isArray(segments) || segments.length === 0) {
-    throw new Error('Gemini returned an empty or invalid transcript.');
+    const raw = await generateJson<TranscriptSegment[]>(
+      [createPartFromUri(uploaded.uri, uploaded.mimeType), prompt],
+      transcriptSchema,
+      ThinkingLevel.LOW,
+    );
+    return tidySegments(Array.isArray(raw) ? raw : [], durationSec);
+  } catch (err) {
+    throw explainError(err);
+  } finally {
+    if (uploaded) {
+      // Uploaded files expire on their own after 48h; this just tidies up.
+      client().files.delete({ name: uploaded.name }).catch(() => undefined);
+    }
   }
-  return segments
-    .filter((s) => typeof s.start === 'number' && typeof s.end === 'number' && s.end > s.start)
-    .sort((a, b) => a.start - b.start);
 }
+
+/** Sort, clamp to [0, duration] and remove overlaps, so captions never stack. */
+function tidySegments(raw: TranscriptSegment[], durationSec: number): TranscriptSegment[] {
+  const sorted = raw
+    .filter(
+      (s) =>
+        s &&
+        typeof s.start === 'number' &&
+        typeof s.end === 'number' &&
+        typeof s.text === 'string' &&
+        s.text.trim().length > 0,
+    )
+    .map((s) => ({
+      start: Math.max(0, Math.min(durationSec, s.start)),
+      end: Math.max(0, Math.min(durationSec, s.end)),
+      text: s.text.trim(),
+    }))
+    .sort((a, b) => a.start - b.start);
+
+  const result: TranscriptSegment[] = [];
+  for (const seg of sorted) {
+    const prev = result[result.length - 1];
+    const start = prev ? Math.max(seg.start, prev.end) : seg.start;
+    if (seg.end - start < 0.05) continue;
+    result.push({ ...seg, start });
+  }
+  return result;
+}
+
+const highlightSchema: Schema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      start: { type: Type.NUMBER },
+      end: { type: Type.NUMBER },
+      title: { type: Type.STRING },
+      caption: { type: Type.STRING },
+      hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
+      viralityScore: { type: Type.INTEGER },
+      reason: { type: Type.STRING },
+    },
+    required: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason'],
+    propertyOrdering: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason'],
+  },
+};
 
 /**
  * Ask Gemini to act as a short-form video editor (Opus Clip style) and pick
@@ -102,11 +263,6 @@ export async function findHighlights(
   transcript: TranscriptSegment[],
   opts: { clipCount: number; sourceDurationSec: number },
 ): Promise<ClipSuggestion[]> {
-  const model = client().getGenerativeModel({
-    model: config.geminiModel,
-    generationConfig: { responseMimeType: 'application/json', temperature: 0.6 },
-  });
-
   const transcriptText = transcript
     .map((s) => `[${s.start.toFixed(1)}-${s.end.toFixed(1)}] ${s.text}`)
     .join('\n');
@@ -117,12 +273,14 @@ vertical videos for TikTok, Instagram Reels and YouTube Shorts.
 
 Below is a timestamped transcript of a video that is ${opts.sourceDurationSec.toFixed(0)} \
 seconds long in total. Pick the ${opts.clipCount} best, most self-contained moments to cut into \
-standalone clips. Prioritize: a strong hook in the first sentence, a complete thought (don't cut \
-off mid-idea), emotional or funny or surprising or controversial or highly quotable moments, and \
-moments that make sense with zero outside context.
+standalone clips (fewer if the video doesn't have that many good moments). Prioritize: a strong \
+hook in the first sentence, a complete thought (don't cut off mid-idea), emotional or funny or \
+surprising or controversial or highly quotable moments, and moments that make sense with zero \
+outside context.
 
 Rules:
-- Each clip must be between ${config.minClipSeconds} and ${config.maxClipSeconds} seconds long.
+- Each clip must be between ${config.minClipSeconds} and ${config.maxClipSeconds} seconds long \
+(if the whole video is shorter than that, one clip may cover all of it).
 - start/end must snap to transcript segment boundaries given below (use the bracketed times).
 - Clips must not overlap each other.
 - Order the results by "viralityScore" descending.
@@ -131,30 +289,79 @@ Rules:
 - "hashtags" is 3-6 relevant lowercase hashtags without the # symbol.
 - "viralityScore" is your 0-100 estimate of how well this clip would perform.
 - "reason" is one short sentence on why you picked it.
+- Write title, caption, hashtags and reason in the same language as the transcript.
 
 Transcript:
-${transcriptText}
+${transcriptText}`;
 
-Respond with ONLY a JSON array matching exactly this shape:
-[{"start": 12.0, "end": 45.0, "title": "...", "caption": "...", "hashtags": ["..."], \
-"viralityScore": 87, "reason": "..."}, ...]`;
-
-  const result = await model.generateContent(prompt);
-  const suggestions = parseJsonLoose<ClipSuggestion[]>(result.response.text());
-  if (!Array.isArray(suggestions) || suggestions.length === 0) {
-    throw new Error('Gemini returned no clip suggestions.');
+  let suggestions: ClipSuggestion[];
+  try {
+    suggestions = await generateJson<ClipSuggestion[]>(prompt, highlightSchema, ThinkingLevel.MEDIUM);
+  } catch (err) {
+    throw explainError(err);
   }
+  if (!Array.isArray(suggestions)) return [];
+  return cleanSuggestions(suggestions, transcript, opts);
+}
 
-  // Defensive clamping in case the model drifts outside the video bounds.
-  return suggestions
-    .filter((c) => typeof c.start === 'number' && typeof c.end === 'number' && c.end > c.start)
-    .map((c) => ({
-      ...c,
-      start: Math.max(0, c.start),
-      end: Math.min(opts.sourceDurationSec, c.end),
-      hashtags: Array.isArray(c.hashtags) ? c.hashtags.map((h) => h.replace(/^#/, '')) : [],
-      viralityScore: Math.max(0, Math.min(100, Math.round(c.viralityScore ?? 0))),
-    }))
-    .sort((a, b) => b.viralityScore - a.viralityScore)
-    .slice(0, opts.clipCount);
+/** Snap a time to the nearest boundary in `candidates` if one is close enough. */
+function snap(time: number, candidates: number[], maxDistance: number): number {
+  let best = time;
+  let bestDistance = maxDistance;
+  for (const c of candidates) {
+    const d = Math.abs(c - time);
+    if (d < bestDistance) {
+      best = c;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
+/**
+ * Defensive cleanup of the model's picks: snap to segment boundaries (so a
+ * clip doesn't start or end mid-word), clamp to the video, drop clips that
+ * are far too short or overlap a better one, and normalize the text fields.
+ */
+function cleanSuggestions(
+  raw: ClipSuggestion[],
+  transcript: TranscriptSegment[],
+  opts: { clipCount: number; sourceDurationSec: number },
+): ClipSuggestion[] {
+  const starts = transcript.map((s) => s.start);
+  const ends = transcript.map((s) => s.end);
+  const minLength = Math.min(5, opts.sourceDurationSec);
+
+  const candidates = raw
+    .filter((c) => c && typeof c.start === 'number' && typeof c.end === 'number')
+    .map((c) => {
+      const start = Math.max(0, snap(c.start, starts, 2.5));
+      let end = Math.min(opts.sourceDurationSec, snap(c.end, ends, 2.5));
+      // Allow some slack over the max length, but never a runaway clip.
+      if (end - start > config.maxClipSeconds * 1.5) end = start + config.maxClipSeconds;
+      return {
+        start,
+        end,
+        title: typeof c.title === 'string' && c.title.trim() ? c.title.trim() : 'Klipp',
+        caption: typeof c.caption === 'string' ? c.caption.trim() : '',
+        hashtags: Array.isArray(c.hashtags)
+          ? c.hashtags
+              .map((h) => String(h).replace(/^#+/, '').replace(/\s+/g, '').toLowerCase())
+              .filter(Boolean)
+              .slice(0, 8)
+          : [],
+        viralityScore: Math.max(0, Math.min(100, Math.round(Number(c.viralityScore) || 0))),
+        reason: typeof c.reason === 'string' ? c.reason.trim() : '',
+      };
+    })
+    .filter((c) => c.end - c.start >= minLength)
+    .sort((a, b) => b.viralityScore - a.viralityScore);
+
+  const picked: ClipSuggestion[] = [];
+  for (const c of candidates) {
+    const overlaps = picked.some((p) => c.start < p.end - 0.5 && p.start < c.end - 0.5);
+    if (!overlaps) picked.push(c);
+    if (picked.length >= opts.clipCount) break;
+  }
+  return picked;
 }

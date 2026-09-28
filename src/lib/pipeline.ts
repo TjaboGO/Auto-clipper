@@ -1,24 +1,69 @@
-import path from 'path';
+import crypto from 'crypto';
 import fs from 'fs';
-import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+import { config } from './config';
 import { jobStore } from './jobStore';
 import { jobWorkDir, jobOutputDir } from './paths';
 import { renderQueue } from './queue';
 import { extractAudio, renderClip, generateThumbnail } from './ffmpeg';
-import { probeDuration } from './probe';
+import { probeDuration, probeHasAudio } from './probe';
 import { transcribeAudio, findHighlights } from './gemini';
 import { writeClipAss } from './captions';
 import { downloadFromUrl } from './youtube';
-import type { Job, JobStatus, RenderedClip } from './types';
+import type { Job, JobStatus, RenderedClip, TranscriptSegment } from './types';
 
 function logStep(jobId: string, step: JobStatus, message: string): void {
   jobStore.update(jobId, { status: step });
+  logProgress(jobId, step, message);
+}
+
+function logProgress(jobId: string, step: JobStatus, message: string): void {
   jobStore.appendProgress(jobId, { step, message, at: new Date().toISOString() });
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** Put a freshly-created job on the background render queue. */
 export function enqueueJob(jobId: string): void {
   renderQueue.push(() => processJob(jobId));
+}
+
+/** Split [0, duration] into equal chunks no longer than maxSeconds each. */
+function planChunks(durationSec: number, maxSeconds: number): { start: number; duration: number }[] {
+  const count = Math.max(1, Math.ceil(durationSec / maxSeconds));
+  const size = durationSec / count;
+  return Array.from({ length: count }, (_, i) => ({ start: i * size, duration: size }));
+}
+
+/**
+ * Transcribe the whole video a chunk at a time and stitch the pieces back
+ * onto the source timeline. Each chunk's segments are already clamped to
+ * the chunk, so the stitched transcript stays in order without overlaps.
+ */
+async function transcribeInChunks(
+  jobId: string,
+  sourcePath: string,
+  durationSec: number,
+  workDir: string,
+): Promise<TranscriptSegment[]> {
+  const chunks = planChunks(durationSec, config.transcribeChunkSeconds);
+  const transcript: TranscriptSegment[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const { start, duration } = chunks[i];
+    if (chunks.length > 1) {
+      logProgress(jobId, 'transcribing', `Transkriberar del ${i + 1} av ${chunks.length} ...`);
+    }
+    const audioPath = path.join(workDir, `audio_${i + 1}.mp3`);
+    await extractAudio(sourcePath, audioPath, { start, duration });
+    const segments = await transcribeAudio(audioPath, duration);
+    for (const s of segments) {
+      transcript.push({ start: s.start + start, end: s.end + start, text: s.text });
+    }
+    fs.rmSync(audioPath, { force: true });
+  }
+  return transcript;
 }
 
 /**
@@ -33,8 +78,8 @@ export async function processJob(jobId: string): Promise<void> {
     return;
   }
 
+  const workDir = jobWorkDir(jobId);
   try {
-    const workDir = jobWorkDir(jobId);
     const outDir = jobOutputDir(jobId);
 
     // 1. Ingest source video: either already-uploaded file, or a YouTube URL
@@ -49,14 +94,24 @@ export async function processJob(jobId: string): Promise<void> {
       throw new Error('Källvideon saknas eller kunde inte hämtas.');
     }
 
-    const durationSec = await probeDuration(sourcePath);
+    let durationSec: number;
+    try {
+      durationSec = await probeDuration(sourcePath);
+    } catch (err) {
+      console.error(`[pipeline] job ${jobId}: ffprobe could not read the source:`, err);
+      throw new Error('Kunde inte läsa videofilen. Kontrollera att det är en giltig video.');
+    }
     jobStore.update(jobId, { sourceDurationSec: durationSec });
+    if (!(await probeHasAudio(sourcePath))) {
+      throw new Error('Videon har inget ljudspår, så det finns inget tal att transkribera.');
+    }
 
-    // 2. Extract audio and transcribe it with Gemini.
+    // 2. Transcribe the audio with Gemini, a chunk at a time.
     logStep(jobId, 'transcribing', 'Transkriberar ljudet med Gemini ...');
-    const audioPath = path.join(workDir, 'audio.mp3');
-    await extractAudio(sourcePath, audioPath);
-    const transcript = await transcribeAudio(audioPath);
+    const transcript = await transcribeInChunks(jobId, sourcePath, durationSec, workDir);
+    if (transcript.length === 0) {
+      throw new Error('Gemini hittade inget tal i videon.');
+    }
     jobStore.update(jobId, { transcript });
 
     // 3. Ask Gemini to act as an editor and pick the best moments.
@@ -65,11 +120,16 @@ export async function processJob(jobId: string): Promise<void> {
       clipCount: job.clipCount,
       sourceDurationSec: durationSec,
     });
+    if (suggestions.length === 0) {
+      throw new Error('Gemini hittade inga ögonblick som passade som klipp.');
+    }
     jobStore.update(jobId, { suggestions });
 
     // 4. Render each clip: face-tracked vertical crop + burned-in captions.
+    //    One broken clip shouldn't throw away the others.
     logStep(jobId, 'rendering', `Renderar ${suggestions.length} klipp ...`);
     const clips: RenderedClip[] = [];
+    const failures: string[] = [];
     for (let i = 0; i < suggestions.length; i++) {
       const suggestion = suggestions[i];
       const index = i + 1;
@@ -77,14 +137,25 @@ export async function processJob(jobId: string): Promise<void> {
       const assPath = path.join(workDir, `clip_${index}.ass`);
       const outPath = path.join(outDir, filename);
 
-      writeClipAss(transcript, suggestion.start, suggestion.end, assPath);
-      await renderClip({
-        sourcePath,
-        start: suggestion.start,
-        end: suggestion.end,
-        assPath,
-        outPath,
-      });
+      try {
+        writeClipAss(transcript, suggestion.start, suggestion.end, assPath);
+        await renderClip({
+          sourcePath,
+          start: suggestion.start,
+          end: suggestion.end,
+          assPath,
+          outPath,
+        });
+      } catch (err) {
+        console.error(`[pipeline] job ${jobId}: rendering ${filename} failed:`, err);
+        failures.push(errorMessage(err));
+        logProgress(
+          jobId,
+          'rendering',
+          `Klipp ${index} ("${suggestion.title}") misslyckades: ${errorMessage(err).split('\n')[0]}`,
+        );
+        continue;
+      }
 
       try {
         await generateThumbnail(outPath, path.join(outDir, `clip_${index}.jpg`));
@@ -94,35 +165,41 @@ export async function processJob(jobId: string): Promise<void> {
 
       clips.push({
         ...suggestion,
-        id: uuidv4(),
+        id: crypto.randomUUID(),
         filename,
         durationSec: suggestion.end - suggestion.start,
       });
 
       jobStore.update(jobId, { clips: [...clips] });
-      jobStore.appendProgress(jobId, {
-        step: 'rendering',
-        message: `Klar: "${suggestion.title}" (${index}/${suggestions.length})`,
-        at: new Date().toISOString(),
-      });
+      logProgress(jobId, 'rendering', `Klar: "${suggestion.title}" (${index}/${suggestions.length})`);
+    }
+
+    if (clips.length === 0) {
+      throw new Error(`Inget klipp kunde renderas. Första felet: ${failures[0]}`);
     }
 
     jobStore.update(jobId, { status: 'done' });
-    jobStore.appendProgress(jobId, {
-      step: 'done',
-      message: 'Klart! Alla klipp är redo att laddas ner.',
-      at: new Date().toISOString(),
-    });
+    logProgress(
+      jobId,
+      'done',
+      failures.length > 0
+        ? `Klart! ${clips.length} av ${suggestions.length} klipp blev klara.`
+        : 'Klart! Alla klipp är redo att laddas ner.',
+    );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     console.error(`[pipeline] job ${jobId} failed:`, err);
     jobStore.update(jobId, { status: 'error', error: message });
-    jobStore.appendProgress(jobId, { step: 'error', message, at: new Date().toISOString() });
+    logProgress(jobId, 'error', message);
+  } finally {
+    // The source video and intermediate files can be gigabytes. Once the job
+    // is over only the rendered clips (in the output dir) are needed.
+    fs.rmSync(workDir, { recursive: true, force: true });
   }
 }
 
 export function newJobId(): string {
-  return uuidv4();
+  return crypto.randomUUID();
 }
 
 export type { Job };
