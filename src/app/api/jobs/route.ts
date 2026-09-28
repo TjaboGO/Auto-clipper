@@ -6,7 +6,7 @@ import { Readable, Transform } from 'stream';
 import { pipeline } from 'stream/promises';
 import type { ReadableStream as NodeReadableStream } from 'stream/web';
 import { jobStore } from '@/lib/jobStore';
-import { jobWorkDir } from '@/lib/paths';
+import { jobSourceDir } from '@/lib/paths';
 import { enqueueJob } from '@/lib/pipeline';
 import { isDownloadableUrl } from '@/lib/youtube';
 import { config } from '@/lib/config';
@@ -85,16 +85,18 @@ export async function POST(req: NextRequest) {
 
       const rawExt = path.extname(originalName).toLowerCase();
       const ext = /^\.[a-z0-9]{1,5}$/.test(rawExt) ? rawExt : '.mp4';
-      const workDir = jobWorkDir(jobId);
-      const savedPath = path.join(workDir, `source${ext}`);
+      // Straight into the source folder: the video is kept after the job so
+      // clips can be edited (see SOURCE_RETENTION_DAYS).
+      const sourceDir = jobSourceDir(jobId);
+      const savedPath = path.join(sourceDir, `source${ext}`);
       try {
         const bytes = await saveUpload(req.body, savedPath);
         if (bytes === 0) {
-          fs.rmSync(workDir, { recursive: true, force: true });
+          fs.rmSync(sourceDir, { recursive: true, force: true });
           return badRequest('Filen är tom.');
         }
       } catch (err) {
-        fs.rmSync(workDir, { recursive: true, force: true });
+        fs.rmSync(sourceDir, { recursive: true, force: true });
         if (err instanceof UploadTooLargeError) return badRequest('Filen är för stor (max 2GB).', 413);
         console.error('[api/jobs] upload failed:', err);
         return badRequest('Uppladdningen avbröts innan filen kom fram.');

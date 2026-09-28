@@ -12,14 +12,17 @@ Usage:
 flag is applied), which is what ffmpeg hands us when it decodes.
 
 Prints one JSON object:
-  follow one person at a time:
-    {"layout": "single", "keyframes": [{"t": 0.0, "cx": 0.31, "cut": true}, ...], "stats": {...}}
-  two people stacked (top = the one further left in the frame):
-    {"layout": "split",
-     "top":    {"keyframes": [...], "y": 0.12, "h": 0.62},
-     "bottom": {"keyframes": [...], "y": 0.10, "h": 0.60},
+    {"layout": "single" | "split",
+     "keyframes": [{"t": 0.0, "cx": 0.31, "cut": true}, ...],
+     "split": {"top":    {"keyframes": [...], "y": 0.12, "h": 0.62},
+               "bottom": {"keyframes": [...], "y": 0.10, "h": 0.60}} | null,
      "stats": {...}}
 
+  layout    = what looks best: follow whoever talks, or split screen
+  keyframes = the crop that follows whoever talks
+  split     = the two main people stacked (top = the one further left in
+              the frame), whenever there are two - so the editor can switch
+              to split screen even when it wasn't picked automatically
   t   = seconds from --start;  cx = face center, normalized 0..1 across the
         frame width;  cut = jump there (true) or pan from the previous
         keyframe (false);  y/h = top and height of a split-screen crop as
@@ -78,6 +81,8 @@ SPLIT_MIN_PRESENCE = 0.6
 SPLIT_MIN_SHARE = 0.2
 SPLIT_MIN_SWITCHES = 3
 SPLIT_MAX_TURN_SECONDS = 4.0
+# A split screen is offered (not picked) when both are in view this much.
+SPLIT_OPTION_PRESENCE = 0.3
 # In a split-screen half the face takes up about this much of the height,
 # without zooming in past half the frame height (it would get blurry).
 SPLIT_FACE_HEIGHT = 0.3
@@ -403,7 +408,7 @@ def main() -> int:
         tracks = [tracks[i] for i in keep]
     if not tracks:
         print(json.dumps({'layout': 'single', 'keyframes': [{'t': 0.0, 'cx': 0.5, 'cut': True}],
-                          'stats': {'tracks': 0}}))
+                          'split': None, 'stats': {'tracks': 0}}))
         return 0
 
     speech = read_speech(args, frames)
@@ -437,6 +442,8 @@ def main() -> int:
         'detector': 'yunet' if detector.yunet is not None else 'haar',
     }
 
+    layout = 'single'
+    split = None
     main_two = sorted(range(len(tracks)), key=lambda t: -presence[t])[:2]
     if len(main_two) == 2:
         a, b = main_two
@@ -449,26 +456,29 @@ def main() -> int:
         typical_turn = float(np.median(inner))
         stats['typical_turn'] = round(typical_turn, 1)
         apart = abs(np.nanmedian([x[0] for x in boxes[a] if x]) - np.nanmedian([x[0] for x in boxes[b] if x]))
-        if (
-            min(presence[a], presence[b]) >= SPLIT_MIN_PRESENCE
-            and min(shares[a], shares[b]) >= SPLIT_MIN_SHARE
-            and between >= SPLIT_MIN_SWITCHES
-            and typical_turn <= SPLIT_MAX_TURN_SECONDS
-            and apart >= 0.2 * det_w
-        ):
+        if min(presence[a], presence[b]) >= SPLIT_OPTION_PRESENCE and apart >= 0.2 * det_w:
             left, right = sorted((a, b), key=lambda t: np.nanmedian([x[0] for x in boxes[t] if x]))
-            print(json.dumps({
-                'layout': 'split',
+            split = {
                 'top': split_half(boxes[left], det_w, det_h),
                 'bottom': split_half(boxes[right], det_w, det_h),
-                'stats': stats,
-            }))
-            return 0
+            }
+            if (
+                min(presence[a], presence[b]) >= SPLIT_MIN_PRESENCE
+                and min(shares[a], shares[b]) >= SPLIT_MIN_SHARE
+                and between >= SPLIT_MIN_SWITCHES
+                and typical_turn <= SPLIT_MAX_TURN_SECONDS
+            ):
+                layout = 'split'
 
     positions = [
         boxes[path[i]][i][0] / det_w if boxes[path[i]][i] is not None else None for i in range(frames)
     ]
-    print(json.dumps({'layout': 'single', 'keyframes': follow(positions, set(switches)), 'stats': stats}))
+    print(json.dumps({
+        'layout': layout,
+        'keyframes': follow(positions, set(switches)),
+        'split': split,
+        'stats': stats,
+    }))
     return 0
 
 

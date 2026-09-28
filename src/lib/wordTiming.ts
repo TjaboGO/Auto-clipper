@@ -44,6 +44,11 @@ const CLOSE_SIMILARITY = 0.6;
 const MERGE_SIMILARITY = 0.8;
 // Filler sounds (eh, öh, ehm, hmm, mm, uh, um...) never stand in for a word.
 const FILLER = /^(?:[eöäau]+h+m*|u+m+|h+m+|m+h?m+)$/;
+
+/** Whether a transcript word is a filler sound (the editor can cut those out). */
+export function isFiller(text: string): boolean {
+  return FILLER.test(normalizeWord(text));
+}
 const SCORE_NEVER = -5;
 // Clip edges: start a little before the first word, let the last one ring
 // out, and never move an edge further than MAX_EDGE_SHIFT.
@@ -631,6 +636,30 @@ function describeFailure(err: unknown): string {
     }
   }
   return message.split('\n')[0];
+}
+
+/**
+ * Exact times for a run of transcript words by listening to [start,end] of
+ * the source (the editor uses this when a clip is stretched into words the
+ * pipeline never listened to). Returns null if Whisper can't run or the
+ * words don't line up with what it hears.
+ */
+export async function timeWords(opts: {
+  sourcePath: string;
+  durationSec: number;
+  range: ClipRange;
+  words: TimedWord[];
+  workDir: string;
+}): Promise<TimedWord[] | null> {
+  if (!config.wordTiming || opts.words.length === 0) return null;
+  try {
+    const [heard] = await listenToClips(opts.sourcePath, opts.durationSec, [opts.range], opts.workDir);
+    if (!heard.words || heard.words.length === 0) return null;
+    return alignWords(opts.words, heard.words, heard.loudness);
+  } catch (err) {
+    console.warn('[wordTiming] Whisper failed for an edited clip, keeping estimated timing:', err);
+    return null;
+  }
 }
 
 export interface WordTimingResult {

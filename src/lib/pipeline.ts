@@ -3,13 +3,17 @@ import fs from 'fs';
 import path from 'path';
 import { config } from './config';
 import { jobStore } from './jobStore';
-import { jobWorkDir, jobOutputDir } from './paths';
+import { jobWorkDir, jobOutputDir, jobSourceDir } from './paths';
 import { renderQueue } from './queue';
-import { extractAudio, renderClip, generateThumbnail } from './ffmpeg';
-import { probeDuration, probeHasAudio } from './probe';
+import { extractAudio, generateThumbnail } from './ffmpeg';
+import { probeDimensions, probeDuration, probeHasAudio } from './probe';
 import { transcribeAudio, findHighlights } from './gemini';
-import { SPLIT_SCREEN_CAPTIONS, writeClipAss } from './captions';
-import { planFraming, type Framing } from './smartCrop';
+import { analyzeFraming } from './smartCrop';
+import { renderClipEdit } from './render';
+import { dropSource, writeClipEdit, writeEditorData } from './editor';
+import { buildEditorWords, editWindow, needsFramingAnalysis } from './editorWords';
+import { defaultEdit } from './edit/presets';
+import type { SourceInfo } from './edit/types';
 import { computeWordTimings, whisperModelIsCached, type ClipTiming } from './wordTiming';
 import { downloadFromUrl } from './youtube';
 import type { Job, JobStatus, RenderedClip, TranscriptSegment } from './types';
@@ -80,7 +84,9 @@ async function transcribeInChunks(
 /**
  * Full pipeline for one job: ingest -> transcribe -> pick highlights ->
  * render each clip (smart crop + burned captions). Every step updates the
- * job in jobStore so the frontend's polling can show live progress.
+ * job in jobStore so the frontend's polling can show live progress. Each
+ * clip's words, framing and settings are saved for the editor, and the
+ * source video is kept so clips can be rendered again.
  */
 export async function processJob(jobId: string): Promise<void> {
   const job = jobStore.get(jobId);
@@ -98,7 +104,7 @@ export async function processJob(jobId: string): Promise<void> {
     let sourcePath = job.sourceVideoPath;
     if (job.source.type === 'youtube') {
       logStep(jobId, 'downloading', `Laddar ner videon från ${job.source.url} ...`);
-      sourcePath = await downloadFromUrl(job.source.url, workDir);
+      sourcePath = await downloadFromUrl(job.source.url, jobSourceDir(jobId));
       jobStore.update(jobId, { sourceVideoPath: sourcePath });
     }
     if (!sourcePath || !fs.existsSync(sourcePath)) {
@@ -116,6 +122,7 @@ export async function processJob(jobId: string): Promise<void> {
     if (!(await probeHasAudio(sourcePath))) {
       throw new Error('Videon har inget ljudspår, så det finns inget tal att transkribera.');
     }
+    const source: SourceInfo = { ...(await probeDimensions(sourcePath)), duration: durationSec, hasAudio: true };
 
     // 2. Transcribe the audio with Gemini, a chunk at a time.
     logStep(jobId, 'transcribing', 'Transkriberar ljudet med Gemini ...');
@@ -160,24 +167,39 @@ export async function processJob(jobId: string): Promise<void> {
       logProgress(jobId, 'rendering', describeTiming(timing.clips, timing.problem));
     }
 
-    // 5. Render each clip: face-tracked vertical crop + burned-in captions.
-    //    One broken clip shouldn't throw away the others.
+    // 5. Render each clip: face-tracked vertical crop + burned-in captions,
+    //    through the same path the editor renders with. One broken clip
+    //    shouldn't throw away the others.
     const clips: RenderedClip[] = [];
     const failures: string[] = [];
     for (let i = 0; i < suggestions.length; i++) {
       const suggestion = suggestions[i];
-      const { start, end, words, exact } = timing.clips[i];
+      const { start, end, exact } = timing.clips[i];
       const index = i + 1;
+      const id = crypto.randomUUID();
       const filename = `clip_${index}.mp4`;
-      const assPath = path.join(workDir, `clip_${index}.ass`);
       const outPath = path.join(outDir, filename);
 
-      let layout: Framing['layout'];
+      let layout: RenderedClip['layout'];
+      let clipDuration = end - start;
       try {
-        const framing = await planFraming(sourcePath, start, end);
-        layout = framing.layout;
-        writeClipAss(words, start, end, assPath, layout === 'split' ? SPLIT_SCREEN_CAPTIONS : undefined);
-        await renderClip({ sourcePath, start, end, assPath, outPath, framing });
+        const window = editWindow({ start, end }, durationSec);
+        const analysis = needsFramingAnalysis(source)
+          ? await analyzeFraming(sourcePath, start, end, source)
+          : null;
+        const data = {
+          v: 1 as const,
+          window,
+          words: buildEditorWords(transcript, window, timing.clips[i]),
+          source,
+          analysis,
+        };
+        const edit = defaultEdit({ start, end, title: suggestion.title });
+        const result = await renderClipEdit({ sourcePath, data, edit, outPath, workDir, name: `clip_${index}` });
+        layout = result.layout;
+        clipDuration = result.duration;
+        writeEditorData(jobId, id, data);
+        writeClipEdit(jobId, id, edit);
       } catch (err) {
         console.error(`[pipeline] job ${jobId}: rendering ${filename} failed:`, err);
         failures.push(errorMessage(err));
@@ -199,11 +221,12 @@ export async function processJob(jobId: string): Promise<void> {
         ...suggestion,
         start,
         end,
-        id: crypto.randomUUID(),
+        id,
         filename,
-        durationSec: end - start,
+        durationSec: clipDuration,
         wordTiming: exact ? 'exact' : 'estimated',
         layout,
+        version: 1,
       });
 
       jobStore.update(jobId, { clips: [...clips] });
@@ -226,14 +249,22 @@ export async function processJob(jobId: string): Promise<void> {
         ? `Klart! ${clips.length} av ${suggestions.length} klipp blev klara.`
         : 'Klart! Alla klipp är redo att laddas ner.',
     );
+    // Without a retention period there's no editing: free the disk now.
+    if (config.sourceRetentionDays === 0) {
+      const finished = jobStore.get(jobId);
+      if (finished) dropSource(finished);
+    }
   } catch (err) {
     const message = errorMessage(err);
     console.error(`[pipeline] job ${jobId} failed:`, err);
-    jobStore.update(jobId, { status: 'error', error: message });
+    jobStore.update(jobId, { status: 'error', error: message, sourceVideoPath: undefined });
     logProgress(jobId, 'error', message);
+    // Nothing to edit in a failed job: its source video and editor files go.
+    fs.rmSync(path.join(config.sourcesDir, jobId), { recursive: true, force: true });
+    fs.rmSync(path.join(config.editorDir, jobId), { recursive: true, force: true });
   } finally {
-    // The source video and intermediate files can be gigabytes. Once the job
-    // is over only the rendered clips (in the output dir) are needed.
+    // Intermediate files (audio chunks, subtitles) are only needed while the
+    // job runs.
     fs.rmSync(workDir, { recursive: true, force: true });
   }
 }

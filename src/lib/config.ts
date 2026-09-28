@@ -17,6 +17,13 @@ export const config = {
   uploadsDir: path.join(storageDir, 'uploads'),
   workDir: path.join(storageDir, 'work'),
   outputDir: path.join(storageDir, 'output'),
+  // Source videos are kept after the job so clips can be edited and
+  // rendered again, then deleted after SOURCE_RETENTION_DAYS without use
+  // (0 = delete right after the job, which turns editing off).
+  sourcesDir: path.join(storageDir, 'sources'),
+  sourceRetentionDays: clampInt(process.env.SOURCE_RETENTION_DAYS, 7, 0, 365),
+  // The editor's files per clip: words, framing, your edits, preview video.
+  editorDir: path.join(/* turbopackIgnore: true */ storageDir, 'editor'),
   jobsFile: path.join(storageDir, 'jobs.json'),
 
   // Clip length bounds we ask Gemini to respect, in seconds.

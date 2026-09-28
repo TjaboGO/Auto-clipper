@@ -38,13 +38,18 @@ export interface ClipSuggestion {
 
 export interface RenderedClip extends ClipSuggestion {
   id: string;
-  /** filename inside the job's output dir */
+  /** filename inside the job's output dir (a new one for every version) */
   filename: string;
   durationSec: number;
   /** 'exact': word times from Whisper. 'estimated': split from Gemini's segment times. */
   wordTiming?: 'exact' | 'estimated';
-  /** How the clip is framed: following the speaker, split screen, or letterboxed. */
-  layout?: 'single' | 'split' | 'letterbox';
+  /** How the clip is framed: following the speaker, split screen, or the whole frame. */
+  layout?: 'single' | 'split' | 'fit' | 'letterbox';
+  /** 1 for the pipeline's render, +1 for each render from the editor. */
+  version?: number;
+  /** Set while a render from the editor is waiting, running or has failed. */
+  renderState?: { status: 'queued' | 'rendering' | 'error'; error?: string; at: string };
+  editedAt?: string;
 }
 
 export interface JobProgressStep {
@@ -71,4 +76,6 @@ export interface Job {
   clips?: RenderedClip[];
   progress: JobProgressStep[];
   error?: string;
+  /** When the kept source video was deleted (editing is off from then on). */
+  sourceDeletedAt?: string;
 }

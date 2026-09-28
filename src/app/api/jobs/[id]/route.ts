@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { config } from '@/lib/config';
+import { clipEditable, deleteJob, sourceAvailable } from '@/lib/editor';
 import { jobStore } from '@/lib/jobStore';
 import { isSafeSegment } from '@/lib/paths';
 
@@ -19,5 +21,32 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   // Don't leak internal filesystem paths to the client, and leave out the
   // full transcript - it can be large and this endpoint is polled.
   const { sourceVideoPath: _path, transcript: _transcript, ...publicJob } = job;
-  return NextResponse.json({ job: publicJob });
+  return NextResponse.json({
+    job: {
+      ...publicJob,
+      clips: job.clips?.map((clip) => ({ ...clip, editable: clipEditable(job, clip.id) })),
+      sourceAvailable: sourceAvailable(job),
+      sourceRetentionDays: config.sourceRetentionDays,
+    },
+  });
+}
+
+/** Delete a finished job with its clips and source video. */
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (!isSafeSegment(id)) {
+    return NextResponse.json({ error: 'Ogiltigt jobb-id.' }, { status: 400 });
+  }
+  const job = jobStore.get(id);
+  if (!job) {
+    return NextResponse.json({ error: 'Jobbet hittades inte.' }, { status: 404 });
+  }
+  const busy =
+    (job.status !== 'done' && job.status !== 'error') ||
+    job.clips?.some((c) => c.renderState && c.renderState.status !== 'error');
+  if (busy) {
+    return NextResponse.json({ error: 'Jobbet håller på att renderas. Vänta tills det är klart.' }, { status: 409 });
+  }
+  deleteJob(id);
+  return NextResponse.json({ ok: true });
 }

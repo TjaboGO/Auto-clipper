@@ -1,35 +1,27 @@
-import fs from 'fs';
-import path from 'path';
-import type { TimedWord } from './types';
+import {
+  captionMetrics,
+  captionPages,
+  pageScale,
+  titleMetrics,
+  wordColor,
+  type CaptionMetrics,
+  type CaptionPage,
+} from './edit/captionLayout';
+import type { OutputSize, ResolvedLayout } from './edit/layout';
+import type { OutputWord } from './edit/timeline';
+import type { AspectRatio, CaptionSettings, TitleSettings } from './edit/types';
 
 /** Escape a filesystem path for use as an ffmpeg filtergraph option value. */
 export function escapeFfmpegFilterPath(p: string): string {
   return p.replace(/\\/g, '\\\\').replace(/:/g, '\\:').replace(/'/g, "\\'");
 }
 
-/**
- * Caption font. The TTF ships in assets/fonts and is handed to libass via
- * the ass filter's `fontsdir`, so captions look the same on every machine
- * instead of depending on whatever fonts the server happens to have.
- */
-export const CAPTION_FONT = 'Montserrat ExtraBold';
+// Caption fonts ship in assets/fonts and are handed to libass via the ass
+// filter's `fontsdir`, so captions look the same on every machine instead of
+// depending on whatever fonts the server happens to have.
 
-// Style colours are &HAABBGGRR (alpha, blue, green, red); inline \c tags
-// take &HBBGGRR&.
-const TEXT_COLOUR = '&H00FFFFFF'; // white
 const OUTLINE_COLOUR = '&H00000000'; // black
 const SHADOW_COLOUR = '&H80000000'; // half-transparent black
-const HIGHLIGHT_TAG = '{\\c&H00D7FF&}'; // gold (#FFD700)
-
-// A caption "page" is the group of words shown on screen at once. Short
-// pages read better on a phone than whole sentences.
-const MAX_WORDS_PER_PAGE = 5;
-const MAX_CHARS_PER_PAGE = 24;
-
-// Between words the caption stays up (no flicker in the short gaps real
-// speech has). Only a pause longer than MAX_HOLD clears it, after TAIL_HOLD.
-const MAX_HOLD = 0.8;
-const TAIL_HOLD = 0.3;
 
 function formatAssTime(seconds: number): string {
   // Work in whole centiseconds so rounding can never produce "60.00" seconds.
@@ -43,150 +35,142 @@ function formatAssTime(seconds: number): string {
 
 function escapeAssText(text: string): string {
   // Curly braces start ASS override tags and backslashes start escapes like
-  // \N - neutralize both so spoken text can't break the tags we insert.
-  return text.replace(/\\/g, '/').replace(/\{/g, '(').replace(/\}/g, ')');
+  // \N - neutralize both so spoken text can't break the tags we insert. A
+  // line break would end the event line, so those become spaces.
+  return text
+    .replace(/\\/g, '/')
+    .replace(/\{/g, '(')
+    .replace(/\}/g, ')')
+    .replace(/[\r\n]+/g, ' ');
 }
 
-/** A word on the clip's own timeline, shown from `start` until `until`. */
-interface CaptionWord {
-  text: string;
-  start: number;
-  until: number;
-  seg: number;
+/** #rrggbb as an ASS style colour (&HAABBGGRR). */
+function styleColour(hex: string, alpha = '00'): string {
+  const [r, g, b] = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)];
+  return `&H${alpha}${b}${g}${r}`.toUpperCase();
 }
 
-function pageChars(page: CaptionWord[]): number {
-  return page.reduce((sum, w) => sum + w.text.length, 0) + Math.max(0, page.length - 1);
+/** #rrggbb as an inline \c colour (&HBBGGRR&). */
+function inlineColour(hex: string): string {
+  const [r, g, b] = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)];
+  return `&H${b}${g}${r}&`.toUpperCase();
 }
 
-function paginate(words: CaptionWord[]): CaptionWord[][] {
-  const pages: CaptionWord[][] = [];
-  let page: CaptionWord[] = [];
-  for (const word of words) {
-    const fits =
-      page.length < MAX_WORDS_PER_PAGE && pageChars([...page, word]) <= MAX_CHARS_PER_PAGE;
-    if (page.length > 0 && !fits) {
-      pages.push(page);
-      page = [];
-    }
-    page.push(word);
-  }
-  if (page.length > 0) pages.push(page);
+const n1 = (value: number) => String(Math.round(value * 10) / 10);
 
-  // Don't leave a single word alone on the last page if the page before can
-  // spare one ("konsekvent arbete" + "varje dag", not "... varje" + "dag").
-  if (pages.length >= 2) {
-    const last = pages[pages.length - 1];
-    const prev = pages[pages.length - 2];
-    if (last.length === 1 && prev.length >= 3) {
-      const moved = [prev[prev.length - 1], ...last];
-      if (pageChars(moved) <= MAX_CHARS_PER_PAGE) {
-        pages[pages.length - 2] = prev.slice(0, -1);
-        pages[pages.length - 1] = moved;
+/** A page's text with each word in its colour, word `active` the one being said. */
+function pageText(
+  page: CaptionPage,
+  active: number,
+  settings: CaptionSettings,
+  metrics: CaptionMetrics,
+): string {
+  let current = settings.textColor;
+  return page
+    .map((word, i) => {
+      const colour = wordColor(settings, word, i === active);
+      const grow = i === active && metrics.activeScale !== 1;
+      let tags = '';
+      if (colour !== current) {
+        tags += `\\c${inlineColour(colour)}`;
+        current = colour;
       }
-    }
-  }
-  return pages;
+      if (grow) tags += `\\fscx${Math.round(metrics.activeScale * 100)}\\fscy${Math.round(metrics.activeScale * 100)}`;
+      return `${tags ? `{${tags}}` : ''}${escapeAssText(word.text)}${grow ? '{\\fscx100\\fscy100}' : ''}`;
+    })
+    .join(' ');
 }
 
-export interface AssStyleOptions {
-  fontSize?: number;
-  /** distance from the bottom edge, in px, on the 1080x1920 output canvas */
-  marginV?: number;
-  /** ASS numpad alignment: 2 = bottom center (default), 5 = middle center */
-  alignment?: number;
+/** Box style, bottom layer: the same text, invisible except a box behind word `active`. */
+function boxText(page: CaptionPage, active: number): string {
+  return page
+    .map((word, i) => (i === active ? `{\\3a&H00&}${escapeAssText(word.text)}{\\3a&HFF&}` : escapeAssText(word.text)))
+    .join(' ');
 }
 
-/** Captions on the seam between the two people of a split screen. */
-export const SPLIT_SCREEN_CAPTIONS: AssStyleOptions = { alignment: 5, marginV: 0 };
+export interface ClipAssOptions {
+  /** Caption words on the finished clip's timeline (see outputWords). */
+  words: OutputWord[];
+  clipLength: number;
+  captions: CaptionSettings;
+  title: TitleSettings;
+  out: OutputSize;
+  layout: ResolvedLayout;
+  aspect: AspectRatio;
+}
 
 /**
- * Build a TikTok/CapCut-style caption file (.ass) for ONE output clip: bold
- * white words a few at a time, with the word being spoken right now in gold.
- *
- * `words` carry absolute source-video timestamps (exact from Whisper, or
- * estimated - see wordTiming.ts); `clipStart`/`clipEnd` are also absolute.
- * Output event times are shifted so 0 == clipStart, which is how ffmpeg's
- * `ass` filter will see time after the clip is trimmed out with
- * `-ss clipStart`.
+ * Build the .ass subtitle file for one finished clip: TikTok/CapCut-style
+ * captions a few words at a time with the word being said highlighted (in
+ * the chosen style), plus the optional title at the top. Times are on the
+ * clip's own timeline, which is what ffmpeg's `ass` filter sees after the
+ * cuts.
  */
-export function buildClipAss(
-  words: TimedWord[],
-  clipStart: number,
-  clipEnd: number,
-  style: AssStyleOptions = {},
-): string {
-  const fontSize = style.fontSize ?? 92;
-  const marginV = style.marginV ?? 480;
-  const alignment = style.alignment ?? 2;
-  const clipLength = clipEnd - clipStart;
+export function buildClipAss(opts: ClipAssOptions): string {
+  const { words, clipLength, captions, title, out, layout, aspect } = opts;
+  const m = captionMetrics(captions, out, layout, aspect);
+  const t = titleMetrics(captions, title.duration, out, aspect, clipLength);
+  const text = styleColour(captions.textColor);
 
   const header = `[Script Info]
 ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
+PlayResX: ${out.w}
+PlayResY: ${out.h}
 ScaledBorderAndShadow: yes
 WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,${CAPTION_FONT},${fontSize},${TEXT_COLOUR},${TEXT_COLOUR},${OUTLINE_COLOUR},${SHADOW_COLOUR},0,0,0,0,100,100,0,0,1,7,3,${alignment},90,90,${marginV},1
+Style: Caption,${m.font.family},${n1(m.fontSize)},${text},${text},${OUTLINE_COLOUR},${SHADOW_COLOUR},0,0,0,0,100,100,0,0,1,${n1(m.outline)},${n1(m.shadow)},5,${Math.round(m.marginX)},${Math.round(m.marginX)},0,1
+Style: Box,${m.font.family},${n1(m.fontSize)},${text},${text},${styleColour(captions.highlightColor)},${styleColour(captions.highlightColor)},0,0,0,0,100,100,0,0,3,${n1(m.boxPad)},0,5,${Math.round(m.marginX)},${Math.round(m.marginX)},0,1
+Style: Title,${t.font.family},${n1(t.fontSize)},&H00141414,&H00141414,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,3,${n1(t.boxPad)},0,8,${Math.round(t.marginX)},${Math.round(t.marginX)},0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
 
-  const visible = words
-    .filter((w) => w.end > clipStart && w.start < clipEnd)
-    .map((w) => ({
-      text: escapeAssText(w.text),
-      seg: w.seg,
-      start: Math.max(w.start, clipStart) - clipStart,
-      end: Math.min(w.end, clipEnd) - clipStart,
-    }));
+  const lines: string[] = [];
+  const dialogue = (layer: number, start: number, end: number, style: string, body: string) =>
+    lines.push(`Dialogue: ${layer},${formatAssTime(start)},${formatAssTime(end)},${style},,0,0,0,,${body}`);
+  const pos = `\\an5\\pos(${n1(m.centerX)},${n1(m.centerY)})`;
 
-  const shown: CaptionWord[] = visible.map((w, i) => {
-    const next = visible[i + 1];
-    const until =
-      next && next.start - w.end <= MAX_HOLD
-        ? next.start
-        : Math.min(w.end + TAIL_HOLD, next ? next.start : clipLength);
-    return { text: w.text, seg: w.seg, start: w.start, until: Math.max(until, w.end) };
-  });
-
-  // Group by transcript segment so a page never runs across two sentences.
-  const groups: CaptionWord[][] = [];
-  for (const word of shown) {
-    const group = groups[groups.length - 1];
-    if (group && group[0].seg === word.seg) group.push(word);
-    else groups.push([word]);
+  if (captions.enabled) {
+    const pages = captionPages(words, clipLength, {
+      maxWords: m.maxWords,
+      maxChars: m.maxChars,
+      uppercase: captions.uppercase,
+    });
+    for (const page of pages) {
+      // A single word too long for the frame is shrunk to fit.
+      const fit = pageScale(page, m.maxChars);
+      const pct = (scale: number) => Math.round(scale * fit * 100);
+      const fitTags = fit < 1 ? `\\fscx${pct(1)}\\fscy${pct(1)}` : '';
+      if (captions.preset === 'clean') {
+        // Nothing changes from word to word: one event for the whole page.
+        dialogue(1, page[0].start, page[page.length - 1].until, 'Caption', `{${pos}${fitTags}}${pageText(page, -1, captions, m)}`);
+        continue;
+      }
+      // One event per word: the whole page is on screen, the active word
+      // stands out. Every event has the same words, so wrapping never jumps.
+      page.forEach((word, i) => {
+        if (word.until - word.start < 0.01) return;
+        if (captions.preset === 'word') {
+          const from = pct(m.popFrom);
+          const pop = `\\fscx${from}\\fscy${from}\\t(0,100,\\fscx${pct(1)}\\fscy${pct(1)})`;
+          dialogue(1, word.start, word.until, 'Caption', `{${pos}${pop}}${pageText(page, i, captions, m)}`);
+          return;
+        }
+        if (captions.preset === 'box') {
+          dialogue(0, word.start, word.until, 'Box', `{${pos}${fitTags}\\1a&HFF&\\3a&HFF&\\4a&HFF&}${boxText(page, i)}`);
+        }
+        dialogue(1, word.start, word.until, 'Caption', `{${pos}${fitTags}}${pageText(page, i, captions, m)}`);
+      });
+    }
   }
 
-  const lines: string[] = [];
-  for (const page of groups.flatMap(paginate)) {
-    // One event per word: the whole page is on screen, the active word is
-    // gold. Every event has the same words, so line wrapping never jumps.
-    page.forEach((word, i) => {
-      if (word.until - word.start < 0.01) return;
-      const text = page
-        .map((w, j) => (j === i ? `${HIGHLIGHT_TAG}${w.text}{\\r}` : w.text))
-        .join(' ');
-      lines.push(
-        `Dialogue: 0,${formatAssTime(word.start)},${formatAssTime(word.until)},Caption,,0,0,0,,${text}`,
-      );
-    });
+  if (title.enabled && title.text.trim()) {
+    dialogue(2, 0, t.until, 'Title', `{\\an8\\pos(${n1(t.centerX)},${n1(t.top)})}${escapeAssText(title.text.trim())}`);
   }
 
   return header + lines.join('\n') + '\n';
-}
-
-export function writeClipAss(
-  words: TimedWord[],
-  clipStart: number,
-  clipEnd: number,
-  outPath: string,
-  style?: AssStyleOptions,
-): void {
-  fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, buildClipAss(words, clipStart, clipEnd, style), 'utf-8');
 }

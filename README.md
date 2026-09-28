@@ -13,6 +13,10 @@ och appen:
    börjar och slutar på riktiga ordgränser
 5. Ger dig färdiga klipp att ladda ner, plus förslag på titel, bildtext och hashtags för varje
    klipp
+6. Låter dig finjustera varje klipp i en redigerare med förhandsvisning direkt i webbläsaren:
+   klipp bort ord i texten, ta bort utfyllnadsord och pauser, dra i start och slut, rätta
+   stavning, byt textstil, typsnitt, format och layout, beskär själv och lägg till en rubrik.
+   Sen renderar du om klippet med ett klick
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -45,13 +49,14 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Docker-bilden innehåller redan ffmpeg, python3, opencv, faster-whisper, yt-dlp och typsnittet för
+Docker-bilden innehåller redan ffmpeg, python3, opencv, faster-whisper, yt-dlp och typsnitten för
 texterna, så du behöver inte installera något extra på servern. Den har också en healthcheck som
 Coolify kan använda. Whisper-modellen laddas ner första gången ett jobb körs och sparas i
 `/app/storage/models`, så den finns kvar mellan deployer.
 
 I Coolify: peka på det här repot, sätt `GEMINI_API_KEY` som miljövariabel, och montera en volym på
-`/app/storage` så att renderade klipp överlever omstarter.
+`/app/storage` så att renderade klipp överlever omstarter. Källvideorna sparas också där (för
+redigeraren) i `SOURCE_RETENTION_DAYS` dagar, så räkna med plats för dem.
 
 **Viktigt:** appen har ingen inloggning. Alla som hittar adressen kan starta jobb på din
 Gemini-nyckel och din server. Lägg den bakom något skydd om den ligger publikt, till exempel
@@ -78,12 +83,25 @@ Basic Auth i Coolify.
   klippets start och slut flyttas till riktiga ordgränser så inget klipp börjar eller slutar mitt i
   ett ord. Om Whisper inte kan köras, eller matchningen blir för osäker, används den uppskattade
   timingen istället, så jobbet går alltid igenom.
-- `src/lib/captions.ts` - bygger en `.ass`-undertextfil per klipp. Texten visas några ord i taget
-  och ordet som sägs just nu lyser guld. Typsnittet (Montserrat ExtraBold, fri licens) ligger i
-  `assets/fonts` så texterna ser likadana ut på alla maskiner.
-- `src/lib/ffmpeg.ts` - klipper ut, beskär (dynamiskt om källan är bredare än 9:16, annars skalas
-  den om med svarta kanter) och bränner in texterna, allt i ett enda ffmpeg-kommando per klipp.
-  Mobilvideor med rotationsflagga hanteras rätt.
+- `src/lib/captions.ts` - bygger en `.ass`-undertextfil per klipp i vald stil: Karaoke (ordet som
+  sägs lyser), Box (färgad ruta bakom ordet), Pop (ordet växer), Ord för ord och Enkel, plus
+  rubriken överst. Nio fria typsnitt (SIL OFL och Apache 2.0, licenserna ligger i
+  `assets/fonts/licenses`) så texterna ser likadana ut på alla maskiner.
+- `src/lib/render.ts` + `src/lib/renderGraph.ts` - renderar ett klipp i ett enda ffmpeg-kommando:
+  beskärning (följ talaren, split screen, eller hela bilden med suddig bakgrund) i valt format
+  (9:16, 1:1, 4:5, 16:9), bortklippta ord och pauser (bilden väljs ut och flyttas ihop, ljudet
+  klipps med korta toningar så skarvarna inte klickar) och texterna. Pipelinen och redigeraren
+  renderar på samma sätt, så ett oredigerat klipp blir likadant om det renderas om.
+- `src/lib/edit/` - redigerarens logik, delad mellan webbläsaren och servern: tidslinjen (vilka
+  delar som klipps bort, hur tiden räknas om), textsidorna, bildformat och beskärning. Därför
+  visar förhandsvisningen samma sak som den färdiga videon.
+- `src/lib/editor.ts` - sparar varje klipps ord, ansiktsanalys och redigering, gör en liten
+  förhandsvideo och ljudvåg när redigeraren öppnas första gången, och renderar om klipp i kön
+  (med ny ansiktsanalys och exakt ordtiming om klippet förlängts). Sköter också städningen av
+  gamla källvideor.
+- `src/components/editor/` - redigeraren: förhandsvisning i en canvas, transkriptet, tidslinjen
+  och inställningarna. Ångra och gör om, autospar och kortkommandon (mellanslag spelar, Delete
+  klipper bort markerade ord, Ctrl+Z ångrar, pilarna spolar).
 - `src/lib/pipeline.ts` - kopplar ihop alla steg ovan och uppdaterar jobbets status så frontend kan
   visa live-progress. Om ett klipp misslyckas fortsätter resten.
 - `src/lib/youtube.ts` - hämtar videon med `yt-dlp` om du klistrar in en länk istället för att
@@ -97,7 +115,10 @@ Basic Auth i Coolify.
 - `POST /api/jobs?filename=video.mp4&clipCount=6` med själva videofilen som request-body. Filen
   strömmas direkt till disk, så även stora filer (max 2 GB) klarar sig utan mycket minne.
 - `POST /api/jobs` med JSON `{ "youtubeUrl": "https://...", "clipCount": 6 }` för en länk.
-- `GET /api/jobs/<id>` för status och klipp, `GET /api/jobs` för de senaste jobben.
+- `GET /api/jobs/<id>` för status och klipp, `GET /api/jobs` för de senaste jobben,
+  `DELETE /api/jobs/<id>` tar bort ett jobb med alla filer.
+- Redigeraren: `GET /api/jobs/<id>/clips/<clipId>/editor` (ord, analys, redigering, förhandsvideo),
+  `PUT .../edit` sparar en redigering, `POST .../render` renderar om klippet.
 
 ## Kända begränsningar (värt att veta)
 
@@ -108,8 +129,15 @@ Basic Auth i Coolify.
 - **Vem som pratar är en gissning.** Appen tittar på munrörelser medan det hörs tal, så den kan ta
   fel, till exempel om den som pratar syns från sidan eller om någon annan skrattar eller tuggar.
   Split screen bestäms för hela klippet och kan inte slås av och på mitt i det.
-- **Källvideon raderas när jobbet är klart.** Bara de färdiga klippen sparas, annars fylls disken
-  snabbt. Vill du köra om en video får du ladda upp den igen.
+- **Källvideon sparas en tid för redigeraren.** Den tas bort automatiskt efter
+  `SOURCE_RETENTION_DAYS` dagar (7 som standard) utan ändringar, eller när du tar bort jobbet.
+  Efter det finns klippen kvar men kan inte redigeras. Sätt 0 för att radera direkt efter jobbet.
+- **Förhandsvisningen är en lättare kopia.** Den visar exakt vad som renderas men i lägre
+  upplösning, och där ordtiderna är uppskattade kan klipp mitt i meningar se lite ojämna ut tills
+  klippet renderats (då tas exakta tider fram).
+- **Redigeraren har inte allt som Opus har.** Det finns ingen B-roll, musik, emojis, logotyp,
+  övergångar eller publicering direkt till TikTok och YouTube. Split screen-halvorna följer
+  personerna automatiskt och kan bara byta plats, inte beskäras för hand.
 - **En kö-arbetare i taget som standard** (`QUEUE_CONCURRENCY=1`). Höj den om servern har gott om
   CPU, men ffmpeg + ansiktsdetektering är tungt - testa dig fram.
 - **Ingen inloggning eller multi-user-stöd.** Det här är byggt som ett personligt verktyg, inte en
@@ -121,7 +149,8 @@ Basic Auth i Coolify.
 
 Se `.env.example`. Den viktiga är `GEMINI_API_KEY`. `GEMINI_MODEL` är `gemini-3.5-flash` som
 standard. Google pensionerar gamla modeller med jämna mellanrum, så byt till en aktuell om jobben
-börjar faila med att modellen inte hittas. `WORD_TIMING` och `WHISPER_MODEL` styr ordtimingen.
+börjar faila med att modellen inte hittas. `WORD_TIMING` och `WHISPER_MODEL` styr ordtimingen, och
+`SOURCE_RETENTION_DAYS` hur länge källvideon sparas för redigeraren.
 
 ## Tech stack
 
@@ -134,6 +163,8 @@ ordtiming, `yt-dlp` för YouTube-nedladdning.
 1. ~~Exakt ordtiming och rena klippkanter~~ (klar)
 2. ~~Bättre ansiktsföljning: bättre ansiktsdetektor, följa den som pratar, split screen när två
    pratar~~ (klar)
-3. Enkel redigerare: flytta start och slut, rätta ord i texten, rendera om ett klipp
-4. Fler val: klipplängd, format (1:1, 16:9), sökruta ("hitta ögonblick om X"), textstilar
+3. ~~Redigerare: klipp bort ord, utfyllnadsord och pauser, flytta start och slut, rätta ord,
+   textstilar, format, layout, manuell beskärning, rubrik, rendera om~~ (klar)
+4. Fler val redan när jobbet startas: klipplängd, format och textstil, en sökruta ("hitta
+   ögonblick om X"), och att AI:n markerar nyckelord i texten
 5. Låta Gemini titta på videon, så det funkar även för innehåll utan prat

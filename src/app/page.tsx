@@ -11,7 +11,8 @@ export default function HomePage() {
         <p className="text-gray-400 text-base md:text-lg leading-relaxed">
           Ladda upp en lång video eller klistra in en YouTube-länk. AI:n hittar de bästa
           ögonblicken, klipper ut dem, följer talaren i bild och lägger på animerade texter
-          automatiskt - redo för TikTok, Reels och Shorts.
+          automatiskt - redo för TikTok, Reels och Shorts. Finjustera sen varje klipp i
+          redigeraren.
         </p>
       </div>
       <UploadForm />

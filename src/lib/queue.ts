@@ -8,7 +8,7 @@ type Task = () => Promise<void>;
  * once. No external dependency (Redis/etc) - good enough for a single
  * self-hosted container; swap for BullMQ if you need multi-instance workers.
  */
-class Queue {
+export class Queue {
   private pending: Task[] = [];
   private active = 0;
 

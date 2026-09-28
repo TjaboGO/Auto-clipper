@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { JobProgress } from '@/components/JobProgress';
 import { ClipCard } from '@/components/ClipCard';
 
@@ -14,6 +14,9 @@ interface Clip {
   hashtags: string[];
   viralityScore: number;
   durationSec: number;
+  version?: number;
+  editable?: boolean;
+  renderState?: { status: 'queued' | 'rendering' | 'error'; error?: string };
 }
 
 interface JobData {
@@ -25,12 +28,19 @@ interface JobData {
   error?: string;
   clipCount: number;
   source: { type: string; originalName?: string; url?: string };
+  sourceAvailable?: boolean;
+  sourceRetentionDays?: number;
 }
+
+const rendering = (job: JobData) =>
+  job.clips?.some((c) => c.renderState && c.renderState.status !== 'error') ?? false;
 
 export default function JobPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [job, setJob] = useState<JobData | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,7 +56,8 @@ export default function JobPage() {
         const data = await res.json();
         if (cancelled) return;
         setJob(data.job);
-        if (data.job.status !== 'done' && data.job.status !== 'error') {
+        // Keep polling while the job runs, or while a clip is rendered again.
+        if ((data.job.status !== 'done' && data.job.status !== 'error') || rendering(data.job)) {
           timer = setTimeout(poll, 2500);
         }
       } catch {
@@ -81,6 +92,19 @@ export default function JobPage() {
   const clips = job.clips ?? [];
   const planned = job.suggestions?.length;
 
+  async function deleteJob() {
+    if (!window.confirm('Ta bort jobbet med alla klipp och källvideon? Det går inte att ångra.')) return;
+    setDeleting(true);
+    const res = await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      router.push('/');
+    } else {
+      setDeleting(false);
+      const body = await res.json().catch(() => ({}));
+      window.alert(body.error ?? 'Kunde inte ta bort jobbet.');
+    }
+  }
+
   return (
     <main className="max-w-5xl mx-auto px-4 py-12 md:py-16">
       <Link href="/" className="text-sm text-gray-400 hover:text-white">
@@ -109,6 +133,26 @@ export default function JobPage() {
 
       {isDone && clips.length === 0 && (
         <p className="text-gray-400 mt-8">Inga klipp kunde skapas från den här videon.</p>
+      )}
+
+      {(isDone || isError) && (
+        <div className="mt-10 flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
+          <p>
+            {job.sourceAvailable && clips.length > 0
+              ? `Källvideon sparas i ${job.sourceRetentionDays} dagar efter senaste ändringen, så klippen går att redigera.`
+              : clips.length > 0
+                ? 'Källvideon är borttagen, så klippen kan inte redigeras längre.'
+                : ''}
+          </p>
+          <button
+            type="button"
+            onClick={deleteJob}
+            disabled={deleting || rendering(job)}
+            className="rounded-lg border border-red-500/30 px-3 py-1.5 text-red-300 hover:bg-red-500/10 disabled:opacity-40"
+          >
+            {deleting ? 'Tar bort ...' : 'Ta bort jobbet'}
+          </button>
+        </div>
       )}
     </main>
   );

@@ -13,6 +13,9 @@ build/
 storage/uploads/*
 storage/work/*
 storage/output/*
+storage/sources/
+storage/editor/
+storage/models/
 storage/jobs.json*
 !storage/uploads/.gitkeep
 !storage/work/.gitkeep

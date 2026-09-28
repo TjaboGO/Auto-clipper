@@ -10,6 +10,7 @@ services:
       - QUEUE_CONCURRENCY=${QUEUE_CONCURRENCY:-1}
       - WORD_TIMING=${WORD_TIMING:-on}
       - WHISPER_MODEL=${WHISPER_MODEL:-small}
+      - SOURCE_RETENTION_DAYS=${SOURCE_RETENTION_DAYS:-7}
       - STORAGE_DIR=/app/storage
     volumes:
       - auto-clipper-storage:/app/storage

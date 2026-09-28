@@ -54,7 +54,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/assets ./assets
 
-RUN mkdir -p /app/storage/uploads /app/storage/work /app/storage/output
+RUN mkdir -p /app/storage/uploads /app/storage/work /app/storage/output /app/storage/sources /app/storage/editor
 
 EXPOSE 3000
 VOLUME ["/app/storage"]

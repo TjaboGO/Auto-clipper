@@ -1,6 +1,6 @@
 import fs from 'fs';
-import path from 'path';
 import { config } from './config';
+import path from 'path';
 import { ensureBaseDirs } from './paths';
 import type { Job, JobProgressStep } from './types';
 
@@ -31,7 +31,9 @@ class JobStore {
 
     // The queue lives in memory, so anything that was still running when the
     // server stopped (e.g. a redeploy) will never finish. Say so instead of
-    // leaving the job page spinning forever, and drop its scratch files.
+    // leaving the job page spinning forever, and drop its files (clips that
+    // were already rendered stay). A clip that was being rendered again from
+    // the editor gets the same treatment.
     const now = new Date().toISOString();
     let interrupted = false;
     for (const job of arr) {
@@ -41,8 +43,22 @@ class JobStore {
         job.error = message;
         job.updatedAt = now;
         job.progress.push({ step: 'error', message, at: now });
-        fs.rmSync(path.join(config.workDir, job.id), { recursive: true, force: true });
+        for (const dir of [config.workDir, config.sourcesDir, config.editorDir]) {
+          fs.rmSync(path.join(dir, job.id), { recursive: true, force: true });
+        }
+        job.sourceVideoPath = undefined;
         interrupted = true;
+      }
+      for (const clip of job.clips ?? []) {
+        if (clip.renderState && clip.renderState.status !== 'error') {
+          fs.rmSync(path.join(config.workDir, `${job.id}-edit-${clip.id}`), { recursive: true, force: true });
+          clip.renderState = {
+            status: 'error',
+            error: 'Servern startades om under renderingen. Försök igen.',
+            at: now,
+          };
+          interrupted = true;
+        }
       }
       this.jobs.set(job.id, job);
     }
@@ -91,6 +107,13 @@ class JobStore {
     existing.progress.push(step);
     existing.updatedAt = new Date().toISOString();
     this.persist();
+  }
+
+  delete(id: string): boolean {
+    this.load();
+    const existed = this.jobs.delete(id);
+    if (existed) this.persist();
+    return existed;
   }
 
   list(): Job[] {

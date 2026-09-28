@@ -3,7 +3,14 @@ import path from 'path';
 import { config } from './config';
 
 export function ensureBaseDirs() {
-  for (const dir of [config.storageDir, config.uploadsDir, config.workDir, config.outputDir]) {
+  for (const dir of [
+    config.storageDir,
+    config.uploadsDir,
+    config.workDir,
+    config.outputDir,
+    config.sourcesDir,
+    config.editorDir,
+  ]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 }
@@ -20,6 +27,27 @@ export function jobOutputDir(jobId: string): string {
   const dir = path.join(config.outputDir, jobId);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+/** Where a job's source video is kept (see SOURCE_RETENTION_DAYS). */
+export function jobSourceDir(jobId: string): string {
+  const dir = path.join(config.sourcesDir, jobId);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** The editor's files for a job's clips (never served directly). */
+export function jobEditorDir(jobId: string): string {
+  const dir = path.join(config.editorDir, jobId);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Every directory a job owns, for deleting it. */
+export function jobDirs(jobId: string): string[] {
+  return [config.workDir, config.outputDir, config.sourcesDir, config.editorDir].map((dir) =>
+    path.join(dir, jobId),
+  );
 }
 
 /** Prevent path traversal when a jobId/filename come from a URL param. */
