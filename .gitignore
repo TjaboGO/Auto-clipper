@@ -13,7 +13,7 @@ build/
 storage/uploads/*
 storage/work/*
 storage/output/*
-storage/jobs.json
+storage/jobs.json*
 !storage/uploads/.gitkeep
 !storage/work/.gitkeep
 !storage/output/.gitkeep

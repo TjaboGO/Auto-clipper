@@ -7,7 +7,8 @@ och appen:
 2. Låter Gemini agera videoredaktör och plockar ut de bästa, mest klippbara ögonblicken
 3. Klipper ut varje ögonblick, beskär det till stående 9:16-format och följer den som pratar i
    bild (ansiktsspårning med OpenCV)
-4. Bränner in animerade, ord-för-ord-texter i CapCut/TikTok-stil
+4. Bränner in animerade texter i CapCut/TikTok-stil, några ord i taget med ordet som sägs just nu
+   i guld
 5. Ger dig färdiga klipp att ladda ner, plus förslag på titel, bildtext och hashtags för varje
    klipp
 
@@ -16,17 +17,23 @@ ansiktsspårningen.
 
 ## Komma igång lokalt
 
-Krav: Node 20+, ffmpeg, python3 med `opencv-python` installerat, och `yt-dlp` om du vill kunna
-klistra in YouTube-länkar.
+Krav: Node 20.9+ (22 rekommenderas), ffmpeg, python3 med `opencv-python-headless` installerat, och
+`yt-dlp` om du vill kunna klistra in YouTube-länkar.
 
 ```bash
 npm install
+pip install -r requirements.txt
 cp .env.example .env
 # lägg in din GEMINI_API_KEY i .env (skaffa en gratis på https://aistudio.google.com/apikey)
 npm run dev
 ```
 
 Öppna http://localhost:3000.
+
+För YouTube-länkar: installera `pip install "yt-dlp[default]"`. yt-dlp behöver en JavaScript-motor
+för YouTube. Har du inte Deno installerat, lägg till raden `--js-runtimes node` i
+`~/.config/yt-dlp/config` så används Node istället (kräver Node 22 eller nyare). Docker-imagen har
+det redan inställt.
 
 ## Köra med Docker (rekommenderas, t.ex. på Coolify)
 
@@ -36,49 +43,74 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Docker-bilden innehåller redan ffmpeg, python3, opencv och yt-dlp, så du behöver inte installera
-något extra på servern.
+Docker-bilden innehåller redan ffmpeg, python3, opencv, yt-dlp och typsnittet för texterna, så du
+behöver inte installera något extra på servern. Den har också en healthcheck som Coolify kan
+använda.
 
 I Coolify: peka på det här repot, sätt `GEMINI_API_KEY` som miljövariabel, och montera en volym på
 `/app/storage` så att renderade klipp överlever omstarter.
 
+**Viktigt:** appen har ingen inloggning. Alla som hittar adressen kan starta jobb på din
+Gemini-nyckel och din server. Lägg den bakom något skydd om den ligger publikt, till exempel
+Basic Auth i Coolify.
+
 ## Hur det funkar under huven
 
-- `src/lib/gemini.ts` - laddar upp ljudet till Gemini, ber om en tidsstämplad transkribering, och
-  ber sedan Gemini (som redaktör) välja ut de bästa klippen med titel, bildtext, hashtags och ett
-  "virality score".
-- `scripts/smart_crop.py` - kör ansiktsdetektering (OpenCV Haar cascade) över varje klipp och
-  räknar ut var den stående kameran ska "titta" över tid, med utjämning så det inte hackar.
-- `src/lib/captions.ts` - bygger en `.ass`-undertextfil per klipp med karaoke-taggar, så orden
-  lyser upp i takt med talet.
-- `src/lib/ffmpeg.ts` - klipper ut, beskär (dynamiskt om källan är liggande, annars skalas den om
-  till stående format med svarta kanter) och bränner in texterna - allt i ett enda ffmpeg-kommando
-  per klipp.
+- `src/lib/gemini.ts` - pratar med Gemini via `@google/genai`. Ljudet laddas upp i bitar på max
+  10 minuter och transkriberas en bit i taget, så svaren aldrig blir för långa och tidsstämplarna
+  håller sig exakta även för långa videor. Sen får Gemini (som redaktör) välja ut de bästa klippen
+  med titel, bildtext, hashtags och ett "virality score". Båda anropen använder ett JSON-schema,
+  och kvotfel och tillfälliga serverfel försöks om automatiskt.
+- `scripts/smart_crop.py` - låter ffmpeg avkoda och skala ner bilder ur klippet (fyra per sekund)
+  och kör ansiktsdetektering (OpenCV Haar cascade) på dem. Kameran panorerar mjukt när personen
+  rör sig lite, och klipper direkt när någon annan tar över bilden eller källan byter vinkel.
+- `src/lib/captions.ts` - bygger en `.ass`-undertextfil per klipp. Texten visas några ord i taget
+  och ordet som sägs just nu lyser guld. Typsnittet (Montserrat ExtraBold, fri licens) ligger i
+  `assets/fonts` så texterna ser likadana ut på alla maskiner.
+- `src/lib/ffmpeg.ts` - klipper ut, beskär (dynamiskt om källan är bredare än 9:16, annars skalas
+  den om med svarta kanter) och bränner in texterna, allt i ett enda ffmpeg-kommando per klipp.
+  Mobilvideor med rotationsflagga hanteras rätt.
 - `src/lib/pipeline.ts` - kopplar ihop alla steg ovan och uppdaterar jobbets status så frontend kan
-  visa live-progress.
+  visa live-progress. Om ett klipp misslyckas fortsätter resten.
 - `src/lib/youtube.ts` - hämtar videon med `yt-dlp` om du klistrar in en länk istället för att
   ladda upp en fil.
 - Jobb körs i en enkel kö i minnet (`src/lib/queue.ts`) och sparas till `storage/jobs.json`, så
-  historiken överlever en omstart. Inget behov av en separat databas för ett projekt som det här.
+  historiken överlever en omstart. Jobb som var igång när servern startades om markeras som
+  avbrutna. Inget behov av en separat databas för ett projekt som det här.
+
+### API
+
+- `POST /api/jobs?filename=video.mp4&clipCount=6` med själva videofilen som request-body. Filen
+  strömmas direkt till disk, så även stora filer (max 2 GB) klarar sig utan mycket minne.
+- `POST /api/jobs` med JSON `{ "youtubeUrl": "https://...", "clipCount": 6 }` för en länk.
+- `GET /api/jobs/<id>` för status och klipp, `GET /api/jobs` för de senaste jobben.
 
 ## Kända begränsningar (värt att veta)
 
 - **Textningens ordtiming är en uppskattning.** Gemini ger tidsstämplar per mening/fras, inte per
-  ord. Varje ords "lystid" i undertexten delas jämnt ut över meningens längd, vilket ser bra ut
-  men inte är perfekt forcerad ljudsynk. Vill du ha exakt ord-för-ord-timing kan du byta ut
-  `transcribeAudio` i `src/lib/gemini.ts` mot t.ex. Whisper med ordnivå-tidsstämplar.
+  ord. Varje ord får en del av meningens tid efter hur långt det är, vilket ser bra ut men inte är
+  perfekt ljudsynk. Vill du ha exakt ord-för-ord-timing kan du byta ut `transcribeAudio` i
+  `src/lib/gemini.ts` mot t.ex. Whisper med ordnivå-tidsstämplar.
+- **Ansiktsspårningen vet inte vem som pratar.** Syns två personer i samma bild följer kameran en
+  av dem (den största) istället för att hoppa fram och tillbaka. Klipper källan mellan personer
+  följer den med.
+- **Källvideon raderas när jobbet är klart.** Bara de färdiga klippen sparas, annars fylls disken
+  snabbt. Vill du köra om en video får du ladda upp den igen.
 - **En kö-arbetare i taget som standard** (`QUEUE_CONCURRENCY=1`). Höj den om servern har gott om
   CPU, men ffmpeg + ansiktsdetektering är tungt - testa dig fram.
 - **Ingen inloggning eller multi-user-stöd.** Det här är byggt som ett personligt verktyg, inte en
-  SaaS. Lägg till auth själv om du vill dela det med fler.
+  SaaS. Se varningen under Docker-avsnittet.
 - **Lagring är lokala filer**, inte S3 eller liknande. Funkar fint på en enda server, men skalar
   inte till flera instanser utan ändringar.
 
 ## Miljövariabler
 
-Se `.env.example`. Den viktiga är `GEMINI_API_KEY`.
+Se `.env.example`. Den viktiga är `GEMINI_API_KEY`. `GEMINI_MODEL` är `gemini-3.5-flash` som
+standard. Google pensionerar gamla modeller med jämna mellanrum, så byt till en aktuell om jobben
+börjar faila med att modellen inte hittas.
 
 ## Tech stack
 
-Next.js 14 (App Router, TypeScript) + Tailwind, `@google/generative-ai` för Gemini, ffmpeg/ffprobe
-för videobehandling, Python + OpenCV för ansiktsspårning, `yt-dlp` för YouTube-nedladdning.
+Next.js 16 (App Router, TypeScript) + React 19 + Tailwind, `@google/genai` för Gemini,
+ffmpeg/ffprobe för videobehandling, Python + OpenCV för ansiktsspårning, `yt-dlp` för
+YouTube-nedladdning.
