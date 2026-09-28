@@ -11,7 +11,9 @@ const OUTPUT_WIDTH = 1080;
 const OUTPUT_HEIGHT = 1920;
 
 /**
- * Extract a small mono mp3 track from a video, for uploading to Gemini.
+ * Extract a 16 kHz mono audio track from a video: a small mp3 for uploading
+ * to Gemini, or plain PCM when `outPath` ends in .wav (for word timing - mp3
+ * adds encoder padding at the start, which would shift every timestamp).
  * Pass `start`/`duration` (seconds) to extract only that part.
  */
 export async function extractAudio(
@@ -21,6 +23,7 @@ export async function extractAudio(
 ): Promise<void> {
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const seek = range ? ['-ss', String(range.start), '-t', String(range.duration)] : [];
+  const codec = outPath.endsWith('.wav') ? ['-c:a', 'pcm_s16le'] : ['-b:a', '64k'];
   await run('ffmpeg', [
     '-y',
     ...seek,
@@ -28,7 +31,7 @@ export async function extractAudio(
     '-vn',
     '-ac', '1',
     '-ar', '16000',
-    '-b:a', '64k',
+    ...codec,
     outPath,
   ]);
 }

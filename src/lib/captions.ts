@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { TranscriptSegment } from './types';
+import type { TimedWord } from './types';
 
 /** Escape a filesystem path for use as an ffmpeg filtergraph option value. */
 export function escapeFfmpegFilterPath(p: string): string {
@@ -26,6 +26,11 @@ const HIGHLIGHT_TAG = '{\\c&H00D7FF&}'; // gold (#FFD700)
 const MAX_WORDS_PER_PAGE = 5;
 const MAX_CHARS_PER_PAGE = 24;
 
+// Between words the caption stays up (no flicker in the short gaps real
+// speech has). Only a pause longer than MAX_HOLD clears it, after TAIL_HOLD.
+const MAX_HOLD = 0.8;
+const TAIL_HOLD = 0.3;
+
 function formatAssTime(seconds: number): string {
   // Work in whole centiseconds so rounding can never produce "60.00" seconds.
   const cs = Math.max(0, Math.round(seconds * 100));
@@ -42,38 +47,21 @@ function escapeAssText(text: string): string {
   return text.replace(/\\/g, '/').replace(/\{/g, '(').replace(/\}/g, ')');
 }
 
-interface TimedWord {
+/** A word on the clip's own timeline, shown from `start` until `until`. */
+interface CaptionWord {
   text: string;
   start: number;
-  end: number;
+  until: number;
+  seg: number;
 }
 
-/**
- * Split a segment's time across its words. Gemini gives segment-level (not
- * word-perfect) timestamps, so each word gets a share of the segment that
- * grows with its length - longer words take longer to say. A deliberate,
- * documented approximation, not forced alignment against the audio.
- */
-function timeWords(words: string[], start: number, end: number): TimedWord[] {
-  const weights = words.map((w) => w.length + 2);
-  const total = weights.reduce((a, b) => a + b, 0);
-  const timed: TimedWord[] = [];
-  let cursor = start;
-  words.forEach((text, i) => {
-    const wordEnd = i === words.length - 1 ? end : cursor + ((end - start) * weights[i]) / total;
-    timed.push({ text, start: cursor, end: wordEnd });
-    cursor = wordEnd;
-  });
-  return timed;
-}
-
-function pageChars(page: TimedWord[]): number {
+function pageChars(page: CaptionWord[]): number {
   return page.reduce((sum, w) => sum + w.text.length, 0) + Math.max(0, page.length - 1);
 }
 
-function paginate(words: TimedWord[]): TimedWord[][] {
-  const pages: TimedWord[][] = [];
-  let page: TimedWord[] = [];
+function paginate(words: CaptionWord[]): CaptionWord[][] {
+  const pages: CaptionWord[][] = [];
+  let page: CaptionWord[] = [];
   for (const word of words) {
     const fits =
       page.length < MAX_WORDS_PER_PAGE && pageChars([...page, word]) <= MAX_CHARS_PER_PAGE;
@@ -111,19 +99,21 @@ export interface AssStyleOptions {
  * Build a TikTok/CapCut-style caption file (.ass) for ONE output clip: bold
  * white words a few at a time, with the word being spoken right now in gold.
  *
- * `transcript` uses absolute source-video timestamps (as returned by
- * Gemini); `clipStart`/`clipEnd` are also absolute. Output event times are
- * shifted so 0 == clipStart, which is how ffmpeg's `ass` filter will see
- * time after the clip is trimmed out with `-ss clipStart`.
+ * `words` carry absolute source-video timestamps (exact from Whisper, or
+ * estimated - see wordTiming.ts); `clipStart`/`clipEnd` are also absolute.
+ * Output event times are shifted so 0 == clipStart, which is how ffmpeg's
+ * `ass` filter will see time after the clip is trimmed out with
+ * `-ss clipStart`.
  */
 export function buildClipAss(
-  transcript: TranscriptSegment[],
+  words: TimedWord[],
   clipStart: number,
   clipEnd: number,
   style: AssStyleOptions = {},
 ): string {
   const fontSize = style.fontSize ?? 92;
   const marginV = style.marginV ?? 480;
+  const clipLength = clipEnd - clipStart;
 
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -140,47 +130,57 @@ Style: Caption,${CAPTION_FONT},${fontSize},${TEXT_COLOUR},${TEXT_COLOUR},${OUTLI
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 `;
 
+  const visible = words
+    .filter((w) => w.end > clipStart && w.start < clipEnd)
+    .map((w) => ({
+      text: escapeAssText(w.text),
+      seg: w.seg,
+      start: Math.max(w.start, clipStart) - clipStart,
+      end: Math.min(w.end, clipEnd) - clipStart,
+    }));
+
+  const shown: CaptionWord[] = visible.map((w, i) => {
+    const next = visible[i + 1];
+    const until =
+      next && next.start - w.end <= MAX_HOLD
+        ? next.start
+        : Math.min(w.end + TAIL_HOLD, next ? next.start : clipLength);
+    return { text: w.text, seg: w.seg, start: w.start, until: Math.max(until, w.end) };
+  });
+
+  // Group by transcript segment so a page never runs across two sentences.
+  const groups: CaptionWord[][] = [];
+  for (const word of shown) {
+    const group = groups[groups.length - 1];
+    if (group && group[0].seg === word.seg) group.push(word);
+    else groups.push([word]);
+  }
+
   const lines: string[] = [];
-  for (const seg of transcript) {
-    if (seg.end <= clipStart || seg.start >= clipEnd) continue;
-    const words = seg.text.trim().split(/\s+/).filter(Boolean);
-    if (words.length === 0) continue;
-
-    // Time words over the whole segment first, then keep the part that falls
-    // inside the clip, so a segment cut by the clip edge keeps its pacing.
-    const visible = timeWords(words, seg.start, seg.end)
-      .filter((w) => w.end > clipStart && w.start < clipEnd)
-      .map((w) => ({
-        text: escapeAssText(w.text),
-        start: Math.max(w.start, clipStart) - clipStart,
-        end: Math.min(w.end, clipEnd) - clipStart,
-      }));
-
-    for (const page of paginate(visible)) {
-      // One event per word: the whole page is on screen, the active word is
-      // gold. Every event has the same words, so line wrapping never jumps.
-      page.forEach((word, i) => {
-        if (word.end - word.start < 0.01) return;
-        const text = page
-          .map((w, j) => (j === i ? `${HIGHLIGHT_TAG}${w.text}{\\r}` : w.text))
-          .join(' ');
-        lines.push(
-          `Dialogue: 0,${formatAssTime(word.start)},${formatAssTime(word.end)},Caption,,0,0,0,,${text}`,
-        );
-      });
-    }
+  for (const page of groups.flatMap(paginate)) {
+    // One event per word: the whole page is on screen, the active word is
+    // gold. Every event has the same words, so line wrapping never jumps.
+    page.forEach((word, i) => {
+      if (word.until - word.start < 0.01) return;
+      const text = page
+        .map((w, j) => (j === i ? `${HIGHLIGHT_TAG}${w.text}{\\r}` : w.text))
+        .join(' ');
+      lines.push(
+        `Dialogue: 0,${formatAssTime(word.start)},${formatAssTime(word.until)},Caption,,0,0,0,,${text}`,
+      );
+    });
   }
 
   return header + lines.join('\n') + '\n';
 }
 
 export function writeClipAss(
-  transcript: TranscriptSegment[],
+  words: TimedWord[],
   clipStart: number,
   clipEnd: number,
   outPath: string,
   style?: AssStyleOptions,
 ): void {
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, buildClipAss(transcript, clipStart, clipEnd, style), 'utf-8');
+  fs.writeFileSync(outPath, buildClipAss(words, clipStart, clipEnd, style), 'utf-8');
 }

@@ -9,6 +9,7 @@ import { extractAudio, renderClip, generateThumbnail } from './ffmpeg';
 import { probeDuration, probeHasAudio } from './probe';
 import { transcribeAudio, findHighlights } from './gemini';
 import { writeClipAss } from './captions';
+import { computeWordTimings, whisperModelIsCached, type ClipTiming } from './wordTiming';
 import { downloadFromUrl } from './youtube';
 import type { Job, JobStatus, RenderedClip, TranscriptSegment } from './types';
 
@@ -23,6 +24,15 @@ function logProgress(jobId: string, step: JobStatus, message: string): void {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function describeTiming(clips: ClipTiming[], problem?: string): string {
+  const exact = clips.filter((c) => c.exact).length;
+  if (exact === clips.length) return `Exakt ordtiming klar för alla ${clips.length} klipp.`;
+  if (exact > 0) {
+    return `Exakt ordtiming för ${exact} av ${clips.length} klipp, resten använder uppskattad timing.`;
+  }
+  return `Kunde inte ta fram exakt ordtiming${problem ? ` (${problem})` : ''}. Använder uppskattad timing.`;
 }
 
 /** Put a freshly-created job on the background render queue. */
@@ -125,27 +135,45 @@ export async function processJob(jobId: string): Promise<void> {
     }
     jobStore.update(jobId, { suggestions });
 
-    // 4. Render each clip: face-tracked vertical crop + burned-in captions.
-    //    One broken clip shouldn't throw away the others.
+    // 4. Exact word timing: Whisper listens to the picked clips, so each
+    //    caption word lights up when it's said and the clips start and end
+    //    on real word boundaries. Falls back to estimated timing on its own.
     logStep(jobId, 'rendering', `Renderar ${suggestions.length} klipp ...`);
+    if (config.wordTiming) {
+      logProgress(
+        jobId,
+        'rendering',
+        whisperModelIsCached()
+          ? 'Tar fram exakt ordtiming med Whisper ...'
+          : 'Laddar ner Whisper-modellen för exakt ordtiming (bara första gången) ...',
+      );
+    }
+    const timing = await computeWordTimings({
+      sourcePath,
+      durationSec,
+      clips: suggestions,
+      transcript,
+      workDir,
+    });
+    if (config.wordTiming) {
+      logProgress(jobId, 'rendering', describeTiming(timing.clips, timing.problem));
+    }
+
+    // 5. Render each clip: face-tracked vertical crop + burned-in captions.
+    //    One broken clip shouldn't throw away the others.
     const clips: RenderedClip[] = [];
     const failures: string[] = [];
     for (let i = 0; i < suggestions.length; i++) {
       const suggestion = suggestions[i];
+      const { start, end, words, exact } = timing.clips[i];
       const index = i + 1;
       const filename = `clip_${index}.mp4`;
       const assPath = path.join(workDir, `clip_${index}.ass`);
       const outPath = path.join(outDir, filename);
 
       try {
-        writeClipAss(transcript, suggestion.start, suggestion.end, assPath);
-        await renderClip({
-          sourcePath,
-          start: suggestion.start,
-          end: suggestion.end,
-          assPath,
-          outPath,
-        });
+        writeClipAss(words, start, end, assPath);
+        await renderClip({ sourcePath, start, end, assPath, outPath });
       } catch (err) {
         console.error(`[pipeline] job ${jobId}: rendering ${filename} failed:`, err);
         failures.push(errorMessage(err));
@@ -165,9 +193,12 @@ export async function processJob(jobId: string): Promise<void> {
 
       clips.push({
         ...suggestion,
+        start,
+        end,
         id: crypto.randomUUID(),
         filename,
-        durationSec: suggestion.end - suggestion.start,
+        durationSec: end - start,
+        wordTiming: exact ? 'exact' : 'estimated',
       });
 
       jobStore.update(jobId, { clips: [...clips] });

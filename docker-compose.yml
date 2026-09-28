@@ -8,6 +8,8 @@ services:
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash}
       - DEFAULT_CLIP_COUNT=${DEFAULT_CLIP_COUNT:-6}
       - QUEUE_CONCURRENCY=${QUEUE_CONCURRENCY:-1}
+      - WORD_TIMING=${WORD_TIMING:-on}
+      - WHISPER_MODEL=${WHISPER_MODEL:-small}
       - STORAGE_DIR=/app/storage
     volumes:
       - auto-clipper-storage:/app/storage

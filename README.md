@@ -8,17 +8,18 @@ och appen:
 3. Klipper ut varje ögonblick, beskär det till stående 9:16-format och följer den som pratar i
    bild (ansiktsspårning med OpenCV)
 4. Bränner in animerade texter i CapCut/TikTok-stil, några ord i taget med ordet som sägs just nu
-   i guld
+   i guld. Whisper lyssnar på varje klipp så att orden lyser upp exakt när de sägs, och klippen
+   börjar och slutar på riktiga ordgränser
 5. Ger dig färdiga klipp att ladda ner, plus förslag på titel, bildtext och hashtags för varje
    klipp
 
-Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, och Python/OpenCV för
-ansiktsspårningen.
+Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
+ansiktsspårningen och faster-whisper för ordtimingen.
 
 ## Komma igång lokalt
 
-Krav: Node 20.9+ (22 rekommenderas), ffmpeg, python3 med `opencv-python-headless` installerat, och
-`yt-dlp` om du vill kunna klistra in YouTube-länkar.
+Krav: Node 20.9+ (22 rekommenderas), ffmpeg, python3 med paketen i `requirements.txt` (OpenCV och
+faster-whisper), och `yt-dlp` om du vill kunna klistra in YouTube-länkar.
 
 ```bash
 npm install
@@ -28,7 +29,7 @@ cp .env.example .env
 npm run dev
 ```
 
-Öppna http://localhost:3000.
+Öppna http://localhost:3000. Testerna körs med `npm test`.
 
 För YouTube-länkar: installera `pip install "yt-dlp[default]"`. yt-dlp behöver en JavaScript-motor
 för YouTube. Har du inte Deno installerat, lägg till raden `--js-runtimes node` i
@@ -43,9 +44,10 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Docker-bilden innehåller redan ffmpeg, python3, opencv, yt-dlp och typsnittet för texterna, så du
-behöver inte installera något extra på servern. Den har också en healthcheck som Coolify kan
-använda.
+Docker-bilden innehåller redan ffmpeg, python3, opencv, faster-whisper, yt-dlp och typsnittet för
+texterna, så du behöver inte installera något extra på servern. Den har också en healthcheck som
+Coolify kan använda. Whisper-modellen laddas ner första gången ett jobb körs och sparas i
+`/app/storage/models`, så den finns kvar mellan deployer.
 
 I Coolify: peka på det här repot, sätt `GEMINI_API_KEY` som miljövariabel, och montera en volym på
 `/app/storage` så att renderade klipp överlever omstarter.
@@ -64,6 +66,12 @@ Basic Auth i Coolify.
 - `scripts/smart_crop.py` - låter ffmpeg avkoda och skala ner bilder ur klippet (fyra per sekund)
   och kör ansiktsdetektering (OpenCV Haar cascade) på dem. Kameran panorerar mjukt när personen
   rör sig lite, och klipper direkt när någon annan tar över bilden eller källan byter vinkel.
+- `scripts/word_timing.py` + `src/lib/wordTiming.ts` - när Gemini valt klippen lyssnar Whisper
+  (faster-whisper) på vart och ett och säger när varje ord sägs. Orden matchas mot Geminis text
+  (felhörda, missade och extra ord hanteras, liksom sammansatta ord som delats olika), och
+  klippets start och slut flyttas till riktiga ordgränser så inget klipp börjar eller slutar mitt i
+  ett ord. Om Whisper inte kan köras, eller matchningen blir för osäker, används den uppskattade
+  timingen istället, så jobbet går alltid igenom.
 - `src/lib/captions.ts` - bygger en `.ass`-undertextfil per klipp. Texten visas några ord i taget
   och ordet som sägs just nu lyser guld. Typsnittet (Montserrat ExtraBold, fri licens) ligger i
   `assets/fonts` så texterna ser likadana ut på alla maskiner.
@@ -87,10 +95,10 @@ Basic Auth i Coolify.
 
 ## Kända begränsningar (värt att veta)
 
-- **Textningens ordtiming är en uppskattning.** Gemini ger tidsstämplar per mening/fras, inte per
-  ord. Varje ord får en del av meningens tid efter hur långt det är, vilket ser bra ut men inte är
-  perfekt ljudsynk. Vill du ha exakt ord-för-ord-timing kan du byta ut `transcribeAudio` i
-  `src/lib/gemini.ts` mot t.ex. Whisper med ordnivå-tidsstämplar.
+- **Ordtimingen kostar lite tid och minne.** Whisper körs på serverns CPU, bara på de valda
+  klippen (inte hela videon). Med `small` tar det ungefär en halv till ett par minuter per jobb
+  beroende på servern, och behöver runt 1 GB RAM medan det körs. På en liten server: sätt
+  `WHISPER_MODEL=base`, eller `WORD_TIMING=off` för att stänga av det.
 - **Ansiktsspårningen vet inte vem som pratar.** Syns två personer i samma bild följer kameran en
   av dem (den största) istället för att hoppa fram och tillbaka. Klipper källan mellan personer
   följer den med.
@@ -107,10 +115,18 @@ Basic Auth i Coolify.
 
 Se `.env.example`. Den viktiga är `GEMINI_API_KEY`. `GEMINI_MODEL` är `gemini-3.5-flash` som
 standard. Google pensionerar gamla modeller med jämna mellanrum, så byt till en aktuell om jobben
-börjar faila med att modellen inte hittas.
+börjar faila med att modellen inte hittas. `WORD_TIMING` och `WHISPER_MODEL` styr ordtimingen.
 
 ## Tech stack
 
 Next.js 16 (App Router, TypeScript) + React 19 + Tailwind, `@google/genai` för Gemini,
-ffmpeg/ffprobe för videobehandling, Python + OpenCV för ansiktsspårning, `yt-dlp` för
-YouTube-nedladdning.
+ffmpeg/ffprobe för videobehandling, Python + OpenCV för ansiktsspårning, faster-whisper för
+ordtiming, `yt-dlp` för YouTube-nedladdning.
+
+## Plan framåt
+
+1. ~~Exakt ordtiming och rena klippkanter~~ (klar)
+2. Bättre ansiktsföljning: bättre ansiktsdetektor, följa den som pratar, split screen när två pratar
+3. Enkel redigerare: flytta start och slut, rätta ord i texten, rendera om ett klipp
+4. Fler val: klipplängd, format (1:1, 16:9), sökruta ("hitta ögonblick om X"), textstilar
+5. Låta Gemini titta på videon, så det funkar även för innehåll utan prat

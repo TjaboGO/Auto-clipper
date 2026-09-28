@@ -13,6 +13,17 @@ export interface TranscriptSegment {
   text: string;
 }
 
+/** One caption word with its time on the source video's timeline. */
+export interface TimedWord {
+  text: string;
+  start: number; // seconds, from source video start
+  end: number; // seconds
+  /** Index of the transcript segment it came from - a caption page never spans two. */
+  seg: number;
+  /** Word timing only: false if Whisper didn't hear it and its time was filled in. */
+  heard?: boolean;
+}
+
 /** A moment Gemini picked out of the transcript as worth clipping. */
 export interface ClipSuggestion {
   start: number;
@@ -30,6 +41,8 @@ export interface RenderedClip extends ClipSuggestion {
   /** filename inside the job's output dir */
   filename: string;
   durationSec: number;
+  /** 'exact': word times from Whisper. 'estimated': split from Gemini's segment times. */
+  wordTiming?: 'exact' | 'estimated';
 }
 
 export interface JobProgressStep {

@@ -31,11 +31,20 @@ export const config = {
   // Max upload size accepted by the /api/jobs route, in bytes.
   maxUploadBytes: 2 * 1024 * 1024 * 1024, // 2GB
 
+  // Exact word timing for captions: Whisper listens to each finished clip.
+  // WORD_TIMING=off falls back to splitting Gemini's sentence times evenly.
+  wordTiming: (process.env.WORD_TIMING || 'on').toLowerCase() !== 'off',
+  whisperModel: process.env.WHISPER_MODEL || 'small',
+  // Downloaded Whisper models live next to the job data, so they survive
+  // container rebuilds when storage is a volume.
+  modelsDir: path.join(storageDir, 'models'),
+
   // Caption font (bundled, see assets/fonts) and the helper script for the
   // face-tracked crop. Both resolve against the app root, which is also the
   // working directory of the standalone server in the Docker image.
   fontsDir: path.join(process.cwd(), 'assets', 'fonts'),
   smartCropScript: path.join(process.cwd(), 'scripts', 'smart_crop.py'),
+  wordTimingScript: path.join(process.cwd(), 'scripts', 'word_timing.py'),
 };
 
 function clampInt(raw: string | undefined, fallback: number, min: number, max: number): number {
