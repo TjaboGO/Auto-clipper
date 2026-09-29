@@ -26,10 +26,6 @@ export const config = {
   editorDir: path.join(/* turbopackIgnore: true */ storageDir, 'editor'),
   jobsFile: path.join(storageDir, 'jobs.json'),
 
-  // Clip length bounds we ask Gemini to respect, in seconds.
-  minClipSeconds: 15,
-  maxClipSeconds: 90,
-
   // Long audio is transcribed in chunks of this many seconds. Keeps every
   // Gemini response far below the output token limit and keeps timestamps
   // accurate (they drift on very long audio).

@@ -78,8 +78,14 @@ export function presetCaptions(id: CaptionPresetId, keep?: Partial<CaptionSettin
 export const ASPECT_RATIOS: AspectRatio[] = ['9:16', '1:1', '4:5', '16:9'];
 export const LAYOUT_MODES: LayoutMode[] = ['auto', 'fill', 'fit', 'split'];
 
-/** How the pipeline renders a fresh clip: no cuts, karaoke captions, auto framing. */
-export function defaultEdit(opts: { start: number; end: number; title: string }): ClipEdit {
+/** How the pipeline renders a fresh clip: no cuts, auto framing, the job's format and caption style. */
+export function defaultEdit(opts: {
+  start: number;
+  end: number;
+  title: string;
+  aspect?: AspectRatio;
+  captionPreset?: CaptionPresetId;
+}): ClipEdit {
   return {
     v: 1,
     start: opts.start,
@@ -88,9 +94,9 @@ export function defaultEdit(opts: { start: number; end: number; title: string })
     removeFillers: false,
     removePauses: false,
     words: {},
-    captions: presetCaptions('karaoke'),
+    captions: presetCaptions(opts.captionPreset ?? 'karaoke'),
     title: { enabled: false, text: opts.title, duration: 'intro' },
-    aspect: '9:16',
+    aspect: opts.aspect ?? '9:16',
     layout: 'auto',
     splitSwap: false,
     reframe: [],

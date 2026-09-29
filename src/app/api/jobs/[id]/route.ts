@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { config } from '@/lib/config';
 import { clipEditable, deleteJob, sourceAvailable } from '@/lib/editor';
+import { canSearch } from '@/lib/pipeline';
 import { jobStore } from '@/lib/jobStore';
 import { isSafeSegment } from '@/lib/paths';
 
@@ -27,6 +28,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       clips: job.clips?.map((clip) => ({ ...clip, editable: clipEditable(job, clip.id) })),
       sourceAvailable: sourceAvailable(job),
       sourceRetentionDays: config.sourceRetentionDays,
+      canSearch: canSearch(job.id),
     },
   });
 }

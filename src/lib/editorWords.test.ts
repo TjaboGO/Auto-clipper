@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildEditorWords, editWindow } from './editorWords';
+import { buildEditorWords, editWindow, keywordWordIds } from './editorWords';
 import type { TranscriptSegment } from './types';
 
 const transcript: TranscriptSegment[] = [
@@ -38,4 +38,18 @@ test("Whisper's times replace the clip's words; neighbours are squeezed off them
 test('the editor window reaches 30 s around the clip, inside the video', () => {
   assert.deepEqual(editWindow({ start: 10, end: 40 }, 60), { start: 0, end: 60 });
   assert.deepEqual(editWindow({ start: 100, end: 130 }, 600), { start: 70, end: 160 });
+});
+
+test('key words and phrases are found wherever they appear, tiny words never', () => {
+  const words = 'det handlar inte om tur utan om konsekvent arbete varje dag och tur igen det är så det blir alltid'
+    .split(' ')
+    .map((text, i) => ({ id: `0:${i}`, text: i === 4 ? 'Tur,' : text }));
+  const ids = keywordWordIds(words, ['tur', 'konsekvent arbete', 'om']);
+  // "tur" twice (case and punctuation don't matter), the phrase as two words, never "om".
+  assert.deepEqual(ids, ['0:4', '0:12', '0:7', '0:8']);
+});
+
+test('at most about a fifth of the words stand out', () => {
+  const words = Array.from({ length: 10 }, (_, i) => ({ id: `0:${i}`, text: 'viktigt' }));
+  assert.equal(keywordWordIds(words, ['viktigt']).length, 2);
 });

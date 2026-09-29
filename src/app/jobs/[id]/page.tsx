@@ -5,6 +5,9 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { JobProgress } from '@/components/JobProgress';
 import { ClipCard } from '@/components/ClipCard';
+import { SearchMore } from '@/components/SearchMore';
+import { captionPreset } from '@/lib/edit/presets';
+import { clipLength, formatClock, type JobOptions } from '@/lib/jobOptions';
 
 interface Clip {
   id: string;
@@ -30,6 +33,23 @@ interface JobData {
   source: { type: string; originalName?: string; url?: string };
   sourceAvailable?: boolean;
   sourceRetentionDays?: number;
+  options?: JobOptions;
+  canSearch?: boolean;
+  finishedAt?: string;
+  lastSearch?: { topic: string; at: string; added: number; message: string };
+}
+
+/** What was chosen for the job, as short labels. */
+function optionLabels(options?: JobOptions): string[] {
+  if (!options) return [];
+  return [
+    options.topic ? `Om: ${options.topic}` : '',
+    options.clipLength === 'auto' ? '' : clipLength(options.clipLength).hint,
+    options.aspect,
+    captionPreset(options.captionPreset).label,
+    options.keywords ? 'Nyckelord' : '',
+    options.range ? `Del ${formatClock(options.range.start)}-${formatClock(options.range.end)}` : '',
+  ].filter(Boolean);
 }
 
 const rendering = (job: JobData) =>
@@ -41,6 +61,8 @@ export default function JobPage() {
   const [job, setJob] = useState<JobData | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Bumped to start polling again (after starting a search for more clips).
+  const [pollKey, setPollKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,7 +92,7 @@ export default function JobPage() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [id]);
+  }, [id, pollKey]);
 
   if (notFound) {
     return (
@@ -91,6 +113,9 @@ export default function JobPage() {
   const isError = job.status === 'error';
   const clips = job.clips ?? [];
   const planned = job.suggestions?.length;
+  // A search for more clips in a job that already finished.
+  const searching = !!job.finishedAt && !isDone && !isError;
+  const labels = optionLabels(job.options);
 
   async function deleteJob() {
     if (!window.confirm('Ta bort jobbet med alla klipp och källvideon? Det går inte att ångra.')) return;
@@ -111,15 +136,32 @@ export default function JobPage() {
         &larr; Ny video
       </Link>
 
-      <h1 className="text-2xl font-bold mt-4 mb-8">
+      <h1 className={`text-2xl font-bold mt-4 ${labels.length ? 'mb-3' : 'mb-8'}`}>
         {isDone
           ? `${clips.length} klipp klara`
           : isError
             ? 'Något gick fel'
-            : clips.length > 0 && planned
-              ? `Skapar dina klipp ... (${clips.length} av ${planned} klara)`
-              : 'Skapar dina klipp ...'}
+            : searching
+              ? 'Letar efter fler klipp ...'
+              : clips.length > 0 && planned
+                ? `Skapar dina klipp ... (${clips.length} av ${planned} klara)`
+                : 'Skapar dina klipp ...'}
       </h1>
+      {labels.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-8">
+          {labels.map((label) => (
+            <span key={label} className="text-xs rounded-full bg-base-800 text-gray-300 px-2.5 py-1">
+              {label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {isDone && job.lastSearch && (
+        <p className={`mb-6 rounded-lg px-4 py-2 text-sm ${job.lastSearch.added > 0 ? 'bg-accent-500/15 text-accent-300' : 'bg-base-800 text-gray-300'}`}>
+          {job.lastSearch.message}
+        </p>
+      )}
 
       {!isDone && <JobProgress steps={job.progress} isError={isError} error={job.error} />}
 
@@ -133,6 +175,14 @@ export default function JobPage() {
 
       {isDone && clips.length === 0 && (
         <p className="text-gray-400 mt-8">Inga klipp kunde skapas från den här videon.</p>
+      )}
+
+      {isDone && job.canSearch && (
+        <SearchMore
+          jobId={job.id}
+          defaultLength={job.options?.clipLength ?? 'auto'}
+          onStarted={() => setPollKey((k) => k + 1)}
+        />
       )}
 
       {(isDone || isError) && (

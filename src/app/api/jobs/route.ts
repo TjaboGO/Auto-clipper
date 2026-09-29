@@ -10,6 +10,7 @@ import { jobSourceDir } from '@/lib/paths';
 import { enqueueJob } from '@/lib/pipeline';
 import { isDownloadableUrl } from '@/lib/youtube';
 import { config } from '@/lib/config';
+import { sanitizeJobOptions } from '@/lib/jobOptions';
 import type { Job } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -44,10 +45,24 @@ function badRequest(error: string, status = 400) {
   return NextResponse.json({ error }, { status });
 }
 
+/** Job options from a JSON body field, or a JSON-encoded `?options=` query param. */
+function readOptions(raw: unknown) {
+  if (typeof raw === 'string') {
+    try {
+      return sanitizeJobOptions(JSON.parse(raw));
+    } catch {
+      return sanitizeJobOptions(null);
+    }
+  }
+  return sanitizeJobOptions(raw);
+}
+
 /**
  * Create a new clipping job. Two ways in:
- *  - JSON `{ youtubeUrl, clipCount }` for a YouTube (or other yt-dlp) link
- *  - the raw video file as the request body, with `?filename=...&clipCount=...`
+ *  - JSON `{ youtubeUrl, clipCount, options }` for a YouTube (or other yt-dlp) link
+ *  - the raw video file as the request body, with `?filename=...&clipCount=...&options=...`
+ * `options` (see jobOptions.ts): clip length, format, caption style, key
+ * words, a topic to search for and a part of the video.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -61,6 +76,7 @@ export async function POST(req: NextRequest) {
     let clipCount = config.defaultClipCount;
     let source: Job['source'];
     let sourceVideoPath: string | undefined;
+    let options = sanitizeJobOptions(null);
 
     if (contentType.includes('application/json')) {
       const body = await req.json().catch(() => ({}));
@@ -68,6 +84,7 @@ export async function POST(req: NextRequest) {
       if (!url) return badRequest('Ingen videofil eller video-URL angavs.');
       if (!isDownloadableUrl(url)) return badRequest('Länken måste börja med http:// eller https://.');
       if (body.clipCount) clipCount = clampClipCount(body.clipCount);
+      options = readOptions(body.options);
       source = { type: 'youtube', url };
     } else if (contentType.includes('multipart/form-data')) {
       return badRequest(
@@ -78,6 +95,7 @@ export async function POST(req: NextRequest) {
       const params = req.nextUrl.searchParams;
       const originalName = (params.get('filename') || 'video.mp4').slice(0, 200);
       if (params.get('clipCount')) clipCount = clampClipCount(params.get('clipCount'));
+      options = readOptions(params.get('options'));
       if (!req.body) return badRequest('Ingen videofil bifogad.');
       if (Number(req.headers.get('content-length') || 0) > config.maxUploadBytes) {
         return badRequest('Filen är för stor (max 2GB).', 413);
@@ -112,6 +130,7 @@ export async function POST(req: NextRequest) {
       status: 'queued',
       source,
       clipCount,
+      options,
       sourceVideoPath,
       progress: [{ step: 'queued', message: 'I kö, väntar på att börja ...', at: now }],
     };

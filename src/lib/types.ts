@@ -1,3 +1,5 @@
+import type { JobOptions } from './jobOptions';
+
 export type JobStatus =
   | 'queued'
   | 'downloading'
@@ -34,6 +36,8 @@ export interface ClipSuggestion {
   /** 0-100, how likely Gemini thinks this clip is to perform well. */
   viralityScore: number;
   reason: string;
+  /** The clip's key words (copied from the transcript), shown in the emphasis colour. */
+  keywords?: string[];
 }
 
 export interface RenderedClip extends ClipSuggestion {
@@ -69,6 +73,8 @@ export interface Job {
   status: JobStatus;
   source: JobSource;
   clipCount: number;
+  /** What was chosen when the job was started (missing on older jobs: the defaults). */
+  options?: JobOptions;
   sourceVideoPath?: string;
   sourceDurationSec?: number;
   transcript?: TranscriptSegment[];
@@ -78,4 +84,8 @@ export interface Job {
   error?: string;
   /** When the kept source video was deleted (editing is off from then on). */
   sourceDeletedAt?: string;
+  /** When the job first finished; a search for more clips runs after that. */
+  finishedAt?: string;
+  /** How the latest search for more clips went (shown on the job page). */
+  lastSearch?: { topic: string; at: string; added: number; message: string };
 }

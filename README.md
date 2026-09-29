@@ -3,8 +3,9 @@
 En egen AI-version av Opus Clip. Du laddar upp en lång video (eller klistrar in en YouTube-länk),
 och appen:
 
-1. Transkriberar hela ljudet med Gemini
-2. Låter Gemini agera videoredaktör och plockar ut de bästa, mest klippbara ögonblicken
+1. Transkriberar ljudet med Gemini (hela videon, eller bara den del du väljer)
+2. Låter Gemini agera videoredaktör och plockar ut de bästa, mest klippbara ögonblicken, eller
+   de bästa ögonblicken om ett ämne du skriver in ("hitta ögonblick om pengar")
 3. Klipper ut varje ögonblick, beskär det till stående 9:16-format och följer den som pratar i
    bild (ansiktsspårning med OpenCV). Pratar två personer i snabb växling delas bilden istället, med
    en person upptill och en nedtill
@@ -13,7 +14,9 @@ och appen:
    börjar och slutar på riktiga ordgränser
 5. Ger dig färdiga klipp att ladda ner, plus förslag på titel, bildtext och hashtags för varje
    klipp
-6. Låter dig finjustera varje klipp i en redigerare med förhandsvisning direkt i webbläsaren:
+6. Låter dig välja klipplängd, format, textstil och om AI:n ska markera nyckelorden redan när du
+   startar, och hitta fler klipp i samma video efteråt utan att den transkriberas igen
+7. Låter dig finjustera varje klipp i en redigerare med förhandsvisning direkt i webbläsaren:
    klipp bort ord i texten, ta bort utfyllnadsord och pauser, dra i start och slut, rätta
    stavning, byt textstil, typsnitt, format och layout, beskär själv och lägg till en rubrik.
    Sen renderar du om klippet med ett klick
@@ -67,8 +70,11 @@ Basic Auth i Coolify.
 - `src/lib/gemini.ts` - pratar med Gemini via `@google/genai`. Ljudet laddas upp i bitar på max
   10 minuter och transkriberas en bit i taget, så svaren aldrig blir för långa och tidsstämplarna
   håller sig exakta även för långa videor. Sen får Gemini (som redaktör) välja ut de bästa klippen
-  med titel, bildtext, hashtags och ett "virality score". Båda anropen använder ett JSON-schema,
-  och kvotfel och tillfälliga serverfel försöks om automatiskt.
+  i vald längd, eller de bästa om ett ämne, med titel, bildtext, hashtags, ett "virality score"
+  och klippets nyckelord (de markeras i texten). Båda anropen använder ett JSON-schema, och
+  kvotfel och tillfälliga serverfel försöks om automatiskt.
+- `src/lib/jobOptions.ts` - valen när ett jobb startas: klipplängd, format, textstil, nyckelord,
+  ämne och del av videon. Samma kontroll av värdena i formuläret och på servern.
 - `scripts/smart_crop.py` - bestämmer hur varje klipp beskärs. ffmpeg avkodar och skalar ner tio
   bilder per sekund ur klippet, och YuNet (OpenCV:s ansiktsdetektor) hittar ansiktena och var ögon
   och mun sitter. Varje person får ett eget spår genom klippet. När det hörs tal jämförs
@@ -103,7 +109,9 @@ Basic Auth i Coolify.
   och inställningarna. Ångra och gör om, autospar och kortkommandon (mellanslag spelar, Delete
   klipper bort markerade ord, Ctrl+Z ångrar, pilarna spolar).
 - `src/lib/pipeline.ts` - kopplar ihop alla steg ovan och uppdaterar jobbets status så frontend kan
-  visa live-progress. Om ett klipp misslyckas fortsätter resten.
+  visa live-progress. Om ett klipp misslyckas fortsätter resten. "Hitta fler klipp" frågar Gemini
+  igen på den transkribering jobbet redan har, undviker det som redan är klipp och lägger till de
+  nya klippen i samma jobb.
 - `src/lib/youtube.ts` - hämtar videon med `yt-dlp` om du klistrar in en länk istället för att
   ladda upp en fil.
 - Jobb körs i en enkel kö i minnet (`src/lib/queue.ts`) och sparas till `storage/jobs.json`, så
@@ -115,6 +123,12 @@ Basic Auth i Coolify.
 - `POST /api/jobs?filename=video.mp4&clipCount=6` med själva videofilen som request-body. Filen
   strömmas direkt till disk, så även stora filer (max 2 GB) klarar sig utan mycket minne.
 - `POST /api/jobs` med JSON `{ "youtubeUrl": "https://...", "clipCount": 6 }` för en länk.
+- Båda tar valfritt `options` (JSON, som query-parameter vid uppladdning):
+  `{ "clipLength": "auto|short|medium|long|xlong", "aspect": "9:16|1:1|4:5|16:9",
+  "captionPreset": "karaoke|box|pop|word|clean", "keywords": true, "topic": "pengar",
+  "range": { "start": 60, "end": 600 } }`.
+- `POST /api/jobs/<id>/search` med `{ "topic": "...", "clipCount": 3, "clipLength": "short" }`
+  hittar fler klipp i ett klart jobb.
 - `GET /api/jobs/<id>` för status och klipp, `GET /api/jobs` för de senaste jobben,
   `DELETE /api/jobs/<id>` tar bort ett jobb med alla filer.
 - Redigeraren: `GET /api/jobs/<id>/clips/<clipId>/editor` (ord, analys, redigering, förhandsvideo),
@@ -135,6 +149,8 @@ Basic Auth i Coolify.
 - **Förhandsvisningen är en lättare kopia.** Den visar exakt vad som renderas men i lägre
   upplösning, och där ordtiderna är uppskattade kan klipp mitt i meningar se lite ojämna ut tills
   klippet renderats (då tas exakta tider fram).
+- **Sökningen letar i det som sägs.** Ett ämne hittas bara om någon pratar om det. Saker som
+  bara syns i bild (ett mål i en match, en rolig min) hittar den inte än, det är fas 5.
 - **Redigeraren har inte allt som Opus har.** Det finns ingen B-roll, musik, emojis, logotyp,
   övergångar eller publicering direkt till TikTok och YouTube. Split screen-halvorna följer
   personerna automatiskt och kan bara byta plats, inte beskäras för hand.
@@ -165,6 +181,6 @@ ordtiming, `yt-dlp` för YouTube-nedladdning.
    pratar~~ (klar)
 3. ~~Redigerare: klipp bort ord, utfyllnadsord och pauser, flytta start och slut, rätta ord,
    textstilar, format, layout, manuell beskärning, rubrik, rendera om~~ (klar)
-4. Fler val redan när jobbet startas: klipplängd, format och textstil, en sökruta ("hitta
-   ögonblick om X"), och att AI:n markerar nyckelord i texten
+4. ~~Fler val när jobbet startas: klipplängd, format, textstil, sökruta ("hitta ögonblick om X"),
+   nyckelord i texten, del av videon, och "hitta fler klipp" i efterhand~~ (klar)
 5. Låta Gemini titta på videon, så det funkar även för innehåll utan prat

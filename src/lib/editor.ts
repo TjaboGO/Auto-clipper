@@ -75,10 +75,10 @@ export function sourceAvailable(job: Job): boolean {
   return !!job.sourceVideoPath && fs.existsSync(job.sourceVideoPath);
 }
 
-/** Whether a clip can be opened in the editor and rendered again. */
+/** Whether a clip can be opened in the editor and rendered again (also while more clips are searched for). */
 export function clipEditable(job: Job, clipId: string): boolean {
   return (
-    job.status === 'done' &&
+    (job.status === 'done' || !!job.finishedAt) &&
     sourceAvailable(job) &&
     fs.existsSync(editorFile(job.id, clipId, 'data.json')) &&
     fs.existsSync(editorFile(job.id, clipId, 'edit.json'))

@@ -37,7 +37,16 @@ class JobStore {
     const now = new Date().toISOString();
     let interrupted = false;
     for (const job of arr) {
-      if (!FINISHED.includes(job.status)) {
+      if (!FINISHED.includes(job.status) && job.finishedAt) {
+        // A search for more clips in a finished job: the job itself is fine.
+        const message = 'Sökningen avbröts när servern startades om. Försök igen.';
+        job.status = 'done';
+        job.updatedAt = now;
+        job.progress.push({ step: 'done', message, at: now });
+        job.lastSearch = { topic: job.lastSearch?.topic ?? '', at: now, added: 0, message };
+        fs.rmSync(path.join(config.workDir, job.id), { recursive: true, force: true });
+        interrupted = true;
+      } else if (!FINISHED.includes(job.status)) {
         const message = 'Servern startades om medan jobbet kördes. Starta ett nytt jobb.';
         job.status = 'error';
         job.error = message;

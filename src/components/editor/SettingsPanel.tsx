@@ -1,9 +1,10 @@
 'use client';
 
 import { useRef, useState, type ReactNode } from 'react';
-import { CAPTION_FONTS, captionFont, cssFontFamily } from '@/lib/edit/fonts';
+import { AspectIcon, CaptionPresetPicker } from '@/components/CaptionStyleParts';
+import { CAPTION_FONTS, cssFontFamily } from '@/lib/edit/fonts';
 import { ASPECT_LABELS, splitAllowed, type ResolvedLayout } from '@/lib/edit/layout';
-import { CAPTION_PRESETS, captionPreset, presetCaptions } from '@/lib/edit/presets';
+import { captionPreset, presetCaptions } from '@/lib/edit/presets';
 import type {
   AspectRatio,
   CaptionSettings,
@@ -122,16 +123,6 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
-function AspectIcon({ aspect }: { aspect: AspectRatio }) {
-  const [w, h] = aspect.split(':').map(Number);
-  const scale = 18 / Math.max(w, h);
-  return (
-    <span className="inline-flex h-5 w-5 items-center justify-center">
-      <span className="rounded-sm border-2 border-current" style={{ width: w * scale, height: h * scale }} />
-    </span>
-  );
-}
-
 export function SettingsPanel(props: SettingsPanelProps) {
   const { edit, set } = props;
   const [tab, setTab] = useState<Tab>('text');
@@ -181,45 +172,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
           <>
             <Toggle label="Visa undertexter" checked={captions.enabled} onChange={(v) => setCaptions({ enabled: v })} />
             <Section title="Stil">
-              <div className="grid grid-cols-2 gap-2">
-                {CAPTION_PRESETS.map((p) => {
-                  const font = captionFont(p.style.font);
-                  const sample = p.style.uppercase ? 'SÅ HÄR' : 'Så här';
-                  const [first, second] = sample.split(' ');
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => set({ ...edit, captions: presetCaptions(p.id, captions) })}
-                      className={`rounded-lg border p-2 text-left ${captions.preset === p.id ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600 bg-base-900'}`}
-                    >
-                      <span
-                        className="block text-lg leading-7 truncate"
-                        style={{
-                          fontFamily: props.fontsReady ? `"${cssFontFamily(font)}"` : undefined,
-                          color: p.style.textColor,
-                          textShadow: '0 0 3px #000, 0 0 2px #000, 2px 2px 0 rgba(0,0,0,.6)',
-                        }}
-                      >
-                        {first}{' '}
-                        <span
-                          style={
-                            p.id === 'box'
-                              ? { background: p.style.highlightColor, padding: '0 4px' }
-                              : p.usesHighlight
-                                ? { color: p.style.highlightColor }
-                                : undefined
-                          }
-                        >
-                          {p.id === 'word' ? '' : second}
-                        </span>
-                      </span>
-                      <span className="block text-xs font-medium mt-1">{p.label}</span>
-                      <span className="block text-[11px] text-gray-400 leading-tight">{p.description}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <CaptionPresetPicker
+                value={captions.preset}
+                onChange={(id) => set({ ...edit, captions: presetCaptions(id, captions) })}
+                fontsReady={props.fontsReady}
+              />
             </Section>
             <Section title="Typsnitt">
               <div className="grid grid-cols-2 gap-1.5">

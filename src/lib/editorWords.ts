@@ -1,4 +1,4 @@
-import { estimateWordTimings, isFiller, type ClipTiming } from './wordTiming';
+import { estimateWordTimings, isFiller, normalizeWord, type ClipTiming } from './wordTiming';
 import type { EditorWord, SourceInfo, TimeRange } from './edit/types';
 import type { TimedWord, TranscriptSegment } from './types';
 
@@ -90,3 +90,26 @@ export function needsFramingAnalysis(source: SourceInfo): boolean {
   return source.width / source.height > 1080 / 1920 + 0.01;
 }
 
+
+/**
+ * The words to highlight for a clip's key words (from Gemini): every place
+ * a key word or phrase appears, in order of importance, until about a fifth
+ * of the words stand out. Tiny words ("är", "i") never count on their own -
+ * they'd light up everywhere.
+ */
+export function keywordWordIds(words: { id: string; text: string }[], keywords: string[]): string[] {
+  const norm = words.map((w) => normalizeWord(w.text));
+  const limit = Math.max(2, Math.round(words.length * 0.2));
+  const ids: string[] = [];
+  for (const keyword of keywords) {
+    const tokens = keyword.split(/\s+/).map(normalizeWord).filter(Boolean);
+    if (tokens.length === 0 || (tokens.length === 1 && tokens[0].length <= 2 && !/\d/.test(tokens[0]))) continue;
+    for (let i = 0; i + tokens.length <= words.length; i++) {
+      if (!tokens.every((t, k) => norm[i + k] === t)) continue;
+      const found = words.slice(i, i + tokens.length).map((w) => w.id);
+      if (ids.length + found.length > limit) return ids;
+      for (const id of found) if (!ids.includes(id)) ids.push(id);
+    }
+  }
+  return ids;
+}

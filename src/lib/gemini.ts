@@ -249,46 +249,82 @@ const highlightSchema: Schema = {
       hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
       viralityScore: { type: Type.INTEGER },
       reason: { type: Type.STRING },
+      keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
     },
-    required: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason'],
-    propertyOrdering: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason'],
+    required: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason', 'keywords'],
+    propertyOrdering: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason', 'keywords'],
   },
 };
 
+export interface HighlightOptions {
+  clipCount: number;
+  sourceDurationSec: number;
+  /** Clip length bounds, seconds. */
+  minSeconds: number;
+  maxSeconds: number;
+  /** "Find moments about ...": only moments about this (empty = the best moments). */
+  topic?: string;
+  /** Parts that are clips already (a search for more): pick something else. */
+  exclude?: { start: number; end: number }[];
+}
+
 /**
  * Ask Gemini to act as a short-form video editor (Opus Clip style) and pick
- * the best self-contained moments out of a timestamped transcript.
+ * the best self-contained moments out of a timestamped transcript - or,
+ * with a topic, the best moments about that topic. Each pick comes with the
+ * words to highlight in its captions.
  */
 export async function findHighlights(
   transcript: TranscriptSegment[],
-  opts: { clipCount: number; sourceDurationSec: number },
+  opts: HighlightOptions,
 ): Promise<ClipSuggestion[]> {
   const transcriptText = transcript
     .map((s) => `[${s.start.toFixed(1)}-${s.end.toFixed(1)}] ${s.text}`)
     .join('\n');
+  const topic = opts.topic?.trim();
+  const covered = transcript.length
+    ? `${transcript[0].start.toFixed(0)} to ${transcript[transcript.length - 1].end.toFixed(0)} seconds`
+    : '';
+
+  const task = topic
+    ? `The viewer is looking for moments about: "${topic}". Pick up to ${opts.clipCount} \
+moments that are clearly about that - the best, most self-contained ones. Only pick moments that \
+really match; return fewer clips, or an empty array, if the video doesn't have enough of them. \
+Within the matching moments, prioritize a strong hook, a complete thought and moments that make \
+sense with zero outside context.`
+    : `Pick the ${opts.clipCount} best, most self-contained moments to cut into standalone clips \
+(fewer if the video doesn't have that many good moments). Prioritize: a strong hook in the first \
+sentence, a complete thought (don't cut off mid-idea), emotional or funny or surprising or \
+controversial or highly quotable moments, and moments that make sense with zero outside context.`;
+
+  const exclude = opts.exclude?.length
+    ? `\n- These parts are already clips, so don't pick anything that overlaps them: ${opts.exclude
+        .map((r) => `[${r.start.toFixed(1)}-${r.end.toFixed(1)}]`)
+        .join(', ')}.`
+    : '';
 
   const prompt = `You are a professional short-form video editor, in the same style as Opus \
 Clip: you turn long recordings (podcasts, interviews, streams) into short, highly clippable \
 vertical videos for TikTok, Instagram Reels and YouTube Shorts.
 
 Below is a timestamped transcript of a video that is ${opts.sourceDurationSec.toFixed(0)} \
-seconds long in total. Pick the ${opts.clipCount} best, most self-contained moments to cut into \
-standalone clips (fewer if the video doesn't have that many good moments). Prioritize: a strong \
-hook in the first sentence, a complete thought (don't cut off mid-idea), emotional or funny or \
-surprising or controversial or highly quotable moments, and moments that make sense with zero \
-outside context.
+seconds long in total (the transcript covers ${covered}). ${task}
 
 Rules:
-- Each clip must be between ${config.minClipSeconds} and ${config.maxClipSeconds} seconds long \
-(if the whole video is shorter than that, one clip may cover all of it).
+- Each clip must be between ${opts.minSeconds} and ${opts.maxSeconds} seconds long \
+(if the whole transcript is shorter than that, one clip may cover all of it).
 - start/end must snap to transcript segment boundaries given below (use the bracketed times).
-- Clips must not overlap each other.
+- Clips must not overlap each other.${exclude}
 - Order the results by "viralityScore" descending.
 - "title" is a short punchy label for the clip (max ~8 words).
 - "caption" is a ready-to-post social caption (1-2 sentences, can include an emoji).
 - "hashtags" is 3-6 relevant lowercase hashtags without the # symbol.
 - "viralityScore" is your 0-100 estimate of how well this clip would perform.
-- "reason" is one short sentence on why you picked it.
+- "reason" is one short sentence on why you picked it${topic ? ' and how it matches what the viewer is looking for' : ''}.
+- "keywords" is the words that carry the clip: about one per 5-8 seconds of clip, each a single \
+word or a short phrase copied exactly as it is written in the transcript (key nouns, names, \
+numbers, strong or emotional words - never filler like "och", "att", "the"). They are \
+highlighted in the captions.
 - Write title, caption, hashtags and reason in the same language as the transcript.
 
 Transcript:
@@ -320,25 +356,29 @@ function snap(time: number, candidates: number[], maxDistance: number): number {
 
 /**
  * Defensive cleanup of the model's picks: snap to segment boundaries (so a
- * clip doesn't start or end mid-word), clamp to the video, drop clips that
- * are far too short or overlap a better one, and normalize the text fields.
+ * clip doesn't start or end mid-word), keep them inside the transcript,
+ * drop clips that are far too short or overlap a better one (or an
+ * existing clip), and normalize the text fields.
  */
-function cleanSuggestions(
+export function cleanSuggestions(
   raw: ClipSuggestion[],
   transcript: TranscriptSegment[],
-  opts: { clipCount: number; sourceDurationSec: number },
+  opts: HighlightOptions,
 ): ClipSuggestion[] {
   const starts = transcript.map((s) => s.start);
   const ends = transcript.map((s) => s.end);
-  const minLength = Math.min(5, opts.sourceDurationSec);
+  const from = transcript.length ? transcript[0].start : 0;
+  const to = transcript.length ? Math.min(opts.sourceDurationSec, transcript[transcript.length - 1].end) : opts.sourceDurationSec;
+  // A little shorter than asked is fine, a sliver is not.
+  const minLength = Math.min(Math.max(5, 0.6 * opts.minSeconds), to - from);
 
   const candidates = raw
     .filter((c) => c && typeof c.start === 'number' && typeof c.end === 'number')
     .map((c) => {
-      const start = Math.max(0, snap(c.start, starts, 2.5));
-      let end = Math.min(opts.sourceDurationSec, snap(c.end, ends, 2.5));
+      const start = Math.max(from, snap(c.start, starts, 2.5));
+      let end = Math.min(to, snap(c.end, ends, 2.5));
       // Allow some slack over the max length, but never a runaway clip.
-      if (end - start > config.maxClipSeconds * 1.5) end = start + config.maxClipSeconds;
+      if (end - start > opts.maxSeconds * 1.5) end = start + opts.maxSeconds;
       return {
         start,
         end,
@@ -352,15 +392,25 @@ function cleanSuggestions(
           : [],
         viralityScore: Math.max(0, Math.min(100, Math.round(Number(c.viralityScore) || 0))),
         reason: typeof c.reason === 'string' ? c.reason.trim() : '',
+        keywords: Array.isArray(c.keywords)
+          ? c.keywords
+              .filter((k): k is string => typeof k === 'string')
+              .map((k) => k.replace(/\s+/g, ' ').trim())
+              .filter((k) => k.length > 0 && k.length <= 40)
+              .slice(0, 12)
+          : [],
       };
     })
     .filter((c) => c.end - c.start >= minLength)
     .sort((a, b) => b.viralityScore - a.viralityScore);
 
+  const taken = [...(opts.exclude ?? [])];
   const picked: ClipSuggestion[] = [];
   for (const c of candidates) {
-    const overlaps = picked.some((p) => c.start < p.end - 0.5 && p.start < c.end - 0.5);
-    if (!overlaps) picked.push(c);
+    const overlaps = taken.some((p) => c.start < p.end - 0.5 && p.start < c.end - 0.5);
+    if (overlaps) continue;
+    picked.push(c);
+    taken.push(c);
     if (picked.length >= opts.clipCount) break;
   }
   return picked;
