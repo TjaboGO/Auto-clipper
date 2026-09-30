@@ -1,0 +1,20 @@
+services:
+  auto-clipper:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash}
+      - DEFAULT_CLIP_COUNT=${DEFAULT_CLIP_COUNT:-6}
+      - QUEUE_CONCURRENCY=${QUEUE_CONCURRENCY:-1}
+      - WORD_TIMING=${WORD_TIMING:-on}
+      - WHISPER_MODEL=${WHISPER_MODEL:-small}
+      - SOURCE_RETENTION_DAYS=${SOURCE_RETENTION_DAYS:-7}
+      - STORAGE_DIR=/app/storage
+    volumes:
+      - auto-clipper-storage:/app/storage
+    restart: unless-stopped
+
+volumes:
+  auto-clipper-storage:
