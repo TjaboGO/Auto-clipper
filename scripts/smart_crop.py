@@ -38,6 +38,10 @@ How it works:
   4. A Viterbi pass picks who to show over time, with a cost per camera
      switch so a short "ja" from the other person doesn't cause a cut.
   5. Two people taking quick turns get a split screen instead.
+  6. No faces (sports, gaming, nature) or only tiny ones (a facecam in a
+     corner, a crowd far away): the crop follows where things move in the
+     picture instead, like a camera operator - camera pans don't count, and
+     it only moves when the action leaves the middle of the frame.
 
 Without the YuNet model it falls back to OpenCV's Haar cascade: no
 landmarks, so it simply follows the largest face.
@@ -83,6 +87,19 @@ SPLIT_MIN_SWITCHES = 3
 SPLIT_MAX_TURN_SECONDS = 4.0
 # A split screen is offered (not picked) when both are in view this much.
 SPLIT_OPTION_PRESENCE = 0.3
+# Following motion instead of faces: frames are split into this many columns,
+# pixel changes smaller than MOTION_NOISE are compression flicker, and the
+# picture has to change at least MIN_MOTION (mean level) to count as action.
+MOTION_BINS = 64
+MOTION_NOISE = 12
+MIN_MOTION = 0.6
+# Faces smaller than this share of the frame height don't steer the crop
+# (a facecam over gameplay, people far away); motion does.
+TINY_FACE = 0.08
+# The crop only follows when the action is further from its middle than
+# this share of the crop's width, and then pans slowly.
+MOTION_DEAD_ZONE = 0.25
+MOTION_PAN_ALPHA = 0.08
 # In a split-screen half the face takes up about this much of the height,
 # without zooming in past half the frame height (it would get blurry).
 SPLIT_FACE_HEIGHT = 0.3
@@ -166,6 +183,106 @@ class Detector:
             return [(f[0], f[1], f[2], f[3], f[4:14].reshape(5, 2)) for f in faces if f[14] >= MIN_FACE_SCORE]
         faces = self.haar.detectMultiScale(gray, 1.15, 5, minSize=(self.min_size, self.min_size))
         return [(float(x), float(y), float(w), float(h), None) for (x, y, w, h) in faces]
+
+
+def camera_shift(prev, cur):
+    """
+    How far the whole picture moved between two frames (a panning or tilting
+    camera): the median movement of up to 200 tracked points. Most points sit
+    on the background, so a player or ball moving on its own doesn't count.
+    """
+    points = cv2.goodFeaturesToTrack(prev, maxCorners=200, qualityLevel=0.01, minDistance=8)
+    if points is None or len(points) < 12:
+        return 0.0, 0.0
+    moved, status, _ = cv2.calcOpticalFlowPyrLK(prev, cur, points, None, winSize=(21, 21), maxLevel=3)
+    ok = status.reshape(-1) == 1
+    if ok.sum() < 12:
+        return 0.0, 0.0
+    delta = (moved - points).reshape(-1, 2)[ok]
+    return float(np.median(delta[:, 0])), float(np.median(delta[:, 1]))
+
+
+def motion_profile(prev, cur, edges):
+    """
+    How much the picture changed in each column band since the last frame,
+    after lining the frames up: a camera that pans or tilts moves everything,
+    so that shift is taken out first (see camera_shift).
+    """
+    dx, dy = camera_shift(prev, cur)
+    a = cv2.GaussianBlur(prev, (5, 5), 0).astype(np.float32)
+    b = cv2.GaussianBlur(cur, (5, 5), 0).astype(np.float32)
+    margin = 0
+    if (abs(dx) > 0.5 or abs(dy) > 0.5) and abs(dx) < a.shape[1] / 4:
+        shift = np.float32([[1, 0, dx], [0, 1, dy]])
+        a = cv2.warpAffine(a, shift, (a.shape[1], a.shape[0]), borderMode=cv2.BORDER_REPLICATE)
+        margin = int(np.ceil(abs(dx))) + 2
+    diff = np.abs(b - a)
+    diff[diff < MOTION_NOISE] = 0
+    if margin:  # the strip the shift uncovered is made up
+        if dx > 0:
+            diff[:, :margin] = 0
+        else:
+            diff[:, -margin:] = 0
+    columns = diff.sum(axis=0, dtype=np.float64)
+    return np.add.reduceat(columns, edges[:-1]) / diff.shape[0]
+
+
+def motion_positions(profiles, crop_share):
+    """
+    Per frame: the horizontal center (0..1) of where the action is, or None.
+    Movement all over the picture (a camera pan, a cut) is taken off first,
+    so only what moves against the background counts. Then the crop-wide
+    window with the most movement wins.
+    """
+    window = max(1, int(round(crop_share * MOTION_BINS)))
+    positions = []
+    for bins in profiles:
+        if bins is None:
+            positions.append(None)
+            continue
+        local = np.clip(bins - np.median(bins), 0, None)
+        if local.mean() < MIN_MOTION:
+            positions.append(None)
+            continue
+        sums = np.convolve(local, np.ones(window), mode='valid')
+        best = int(np.argmax(sums))
+        part = local[best:best + window]
+        center = best + (np.arange(part.size) * part).sum() / max(part.sum(), 1e-9)
+        positions.append(float((center + 0.5) / MOTION_BINS))
+    return positions
+
+
+def follow_motion(positions, crop_share):
+    """
+    Keyframes that follow the action calmly: aim at where it is over each
+    second, only move when it leaves the middle of the crop, and pan slowly.
+    """
+    frames = len(positions)
+    known = [p for p in positions if p is not None]
+    if not known:
+        return [{'t': 0.0, 'cx': 0.5, 'cut': True}], False
+    per_second = []
+    for i in range(0, frames, FPS):
+        chunk = [p for p in positions[i:i + FPS] if p is not None]
+        per_second.append(float(np.median(chunk)) if chunk else None)
+    target = next(p for p in per_second if p is not None)
+    aims = []
+    for p in per_second:
+        if p is not None and abs(p - target) > MOTION_DEAD_ZONE * crop_share:
+            target = p
+        aims.extend([target] * FPS)
+    aims = aims[:frames]
+
+    keyframes = []
+    current = aims[0]
+    keyframes.append({'t': 0.0, 'cx': current, 'cut': True})
+    for i in range(1, frames):
+        # Calm most of the time, quicker when the action is about to leave the crop.
+        gap = aims[i] - current
+        alpha = MOTION_PAN_ALPHA * (1 + 3 * min(1.0, abs(gap) / crop_share))
+        current += alpha * gap
+        keyframes.append({'t': round(i / FPS, 2), 'cx': current, 'cut': False})
+    return simplify(keyframes), True
 
 
 def mouth_movement(marks, prev, cur):
@@ -406,10 +523,25 @@ def main() -> int:
         areas = [float(np.median([f[2] * f[3] for f in t['frames'].values()])) for t in tracks]
         keep = [i for i, a in enumerate(areas) if a >= MIN_FACE_AREA_RATIO * max(areas)]
         tracks = [tracks[i] for i in keep]
-    if not tracks:
-        print(json.dumps({'layout': 'single', 'keyframes': [{'t': 0.0, 'cx': 0.5, 'cut': True}],
-                          'split': None, 'stats': {'tracks': 0}}))
-        return 0
+    # No faces, or only tiny ones: follow the action instead.
+    crop_share = min(1.0, max(0.1, (args.height * 9 / 16) / args.width))
+    tiny = bool(tracks) and max(
+        float(np.median([f[3] for f in t['frames'].values()])) for t in tracks
+    ) < TINY_FACE * det_h
+    if not tracks or tiny:
+        # A second pass over the frames, only for clips that need it.
+        edges = np.linspace(0, det_w, MOTION_BINS + 1).astype(int)
+        motion = []
+        prev = None
+        for frame in read_frames(args, det_w, det_h):
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            motion.append(motion_profile(prev, gray, edges) if prev is not None else None)
+            prev = gray
+        keyframes, moving = follow_motion(motion_positions(motion[:frames], crop_share), crop_share)
+        if moving or not tracks:
+            print(json.dumps({'layout': 'single', 'keyframes': keyframes, 'split': None,
+                              'stats': {'tracks': len(tracks), 'mode': 'motion' if moving else 'center'}}))
+            return 0
 
     speech = read_speech(args, frames)
     if speech is None:
@@ -440,6 +572,7 @@ def main() -> int:
         'shares': [round(s, 2) for s in shares],
         'presence': [round(p, 2) for p in presence],
         'detector': 'yunet' if detector.yunet is not None else 'haar',
+        'mode': 'faces',
     }
 
     layout = 'single'

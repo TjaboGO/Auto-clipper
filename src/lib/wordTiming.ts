@@ -3,7 +3,8 @@ import path from 'path';
 import { config } from './config';
 import { run } from './exec';
 import { extractAudio } from './ffmpeg';
-import type { TimedWord, TranscriptSegment } from './types';
+import { screenEdges } from './moments';
+import type { TimedWord, TranscriptSegment, VisualMoment } from './types';
 
 /** A word as heard by the speech recognizer, on the source video's timeline. */
 export interface HeardWord {
@@ -493,7 +494,8 @@ function fillGaps(
 /**
  * Move the clip's edges to real word boundaries: start just before its first
  * word, end just after its last one, without cutting into the words heard
- * right outside it. An edge next to a word Whisper didn't hear is only ever
+ * right outside it. An edge next to a word Whisper didn't hear, or at
+ * something happening on screen (`hold`, see moments.ts), is only ever
  * widened, never tightened. Keeps the original edges if they would move
  * suspiciously far (a sign the alignment went wrong at the edge).
  */
@@ -502,6 +504,7 @@ export function snapClipToWords(
   words: TimedWord[],
   heard: HeardWord[],
   durationSec: number,
+  hold: { start: boolean; end: boolean } = { start: false, end: false },
 ): ClipRange {
   if (words.length === 0) return clip;
   const first = words[0];
@@ -514,8 +517,8 @@ export function snapClipToWords(
 
   let start = Math.max(0, first.start - LEAD_IN, Math.min(previousEnd + 0.03, first.start - 0.02));
   let end = Math.min(durationSec, last.end + TAIL_OUT, Math.max(nextStart - 0.03, last.end + 0.02));
-  if (first.heard === false) start = Math.min(start, clip.start);
-  if (last.heard === false) end = Math.max(end, clip.end);
+  if (first.heard === false || hold.start) start = Math.min(start, clip.start);
+  if (last.heard === false || hold.end) end = Math.max(end, clip.end);
 
   if (
     Math.abs(start - clip.start) > MAX_EDGE_SHIFT ||
@@ -664,6 +667,8 @@ export async function timeWords(opts: {
 
 export interface WordTimingResult {
   clips: ClipTiming[];
+  /** How many clips Whisper listened to: 0 when it's off or nobody talks. */
+  listened: number;
   /** Why exact timing couldn't be used at all, for the job log. */
   problem?: string;
 }
@@ -681,6 +686,10 @@ export async function computeWordTimings(opts: {
   clips: ClipRange[];
   transcript: TranscriptSegment[];
   workDir: string;
+  /** What happens on screen: clip edges there are never tightened. */
+  visual?: VisualMoment[];
+  /** Called right before Whisper starts listening (it doesn't when nobody talks). */
+  onListen?: () => void;
 }): Promise<WordTimingResult> {
   const { sourcePath, durationSec, clips, transcript, workDir } = opts;
   const estimated: ClipTiming[] = clips.map((clip) => ({
@@ -689,27 +698,33 @@ export async function computeWordTimings(opts: {
     words: estimateWordTimings(transcript, clip.start, clip.end),
     exact: false,
   }));
-  if (!config.wordTiming || clips.length === 0) return { clips: estimated };
+  // Clips without any words (nobody talks) have nothing to time.
+  const withWords = clips.map((_, i) => i).filter((i) => estimated[i].words.length > 0);
+  if (!config.wordTiming || withWords.length === 0) return { clips: estimated, listened: 0 };
 
+  opts.onListen?.();
   let heardPerClip: HeardClip[];
   try {
-    heardPerClip = await listenToClips(sourcePath, durationSec, clips, workDir);
+    heardPerClip = await listenToClips(sourcePath, durationSec, withWords.map((i) => clips[i]), workDir);
   } catch (err) {
     console.warn('[wordTiming] Whisper failed, using estimated timing:', err);
-    return { clips: estimated, problem: describeFailure(err) };
+    return { clips: estimated, listened: withWords.length, problem: describeFailure(err) };
   }
 
   return {
     clips: clips.map((clip, i) => {
-      const { words: heard, loudness } = heardPerClip[i];
+      const listened = withWords.indexOf(i);
+      if (listened < 0) return estimated[i];
+      const { words: heard, loudness } = heardPerClip[listened];
       if (!heard || heard.length === 0) return estimated[i];
       // Only whole segments: the clip keeps its sentences intact.
       const members = clipSegments(transcript, clip);
       const words = estimated[i].words.filter((w) => members.has(w.seg));
       const aligned = alignWords(words, heard, loudness);
       if (!aligned) return estimated[i];
-      const edges = snapClipToWords(clip, aligned, heard, durationSec);
+      const edges = snapClipToWords(clip, aligned, heard, durationSec, screenEdges(clip, opts.visual ?? []));
       return { ...edges, words: aligned, exact: true };
     }),
+    listened: withWords.length,
   };
 }

@@ -10,10 +10,11 @@ test('valid options come through, bad ones fall back to the defaults', () => {
     keywords: false,
     topic: '  pengar  och   sparande ',
     range: { start: 60, end: 600 },
+    visual: 'on',
   };
   assert.deepEqual(sanitizeJobOptions(good), { ...good, topic: 'pengar och sparande' });
   assert.deepEqual(
-    sanitizeJobOptions({ clipLength: 'forever', aspect: '3:2', captionPreset: 'comic', keywords: 'yes', topic: 42 }),
+    sanitizeJobOptions({ clipLength: 'forever', aspect: '3:2', captionPreset: 'comic', keywords: 'yes', topic: 42, visual: 'x' }),
     defaultJobOptions(),
   );
   assert.deepEqual(sanitizeJobOptions('nonsense'), defaultJobOptions());

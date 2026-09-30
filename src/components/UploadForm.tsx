@@ -15,6 +15,7 @@ import {
   MIN_RANGE_SECONDS,
   parseTime,
   sanitizeJobOptions,
+  VISUAL_MODES,
   type JobOptions,
 } from '@/lib/jobOptions';
 
@@ -166,6 +167,7 @@ export function UploadForm() {
     options.aspect,
     captionPreset(options.captionPreset).label,
     options.keywords ? 'nyckelord' : null,
+    options.visual === 'on' ? 'bildanalys' : options.visual === 'off' ? 'ingen bildanalys' : null,
     from || to ? `${from || '0:00'}-${to || 'slut'}` : null,
   ]
     .filter(Boolean)
@@ -283,6 +285,19 @@ export function UploadForm() {
                 fontsReady={fontsReady}
                 columns="grid-cols-2 sm:grid-cols-3"
               />
+            </Field>
+            <Field label="AI:n tittar på videon">
+              <div className="grid grid-cols-3 gap-1.5">
+                {VISUAL_MODES.map((m) => (
+                  <Choice key={m.id} active={options.visual === m.id} onClick={() => set({ visual: m.id })}>
+                    <span className="block text-xs font-medium">{m.label}</span>
+                    <span className="block text-[10px] text-gray-400">{m.hint}</span>
+                  </Choice>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Då hittas bra ögonblick även utan prat: mål, reaktioner, roliga ögonblick. Tar lite längre tid.
+              </p>
             </Field>
             <label className="flex items-start justify-between gap-4 cursor-pointer">
               <span>

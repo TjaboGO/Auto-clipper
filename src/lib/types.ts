@@ -15,6 +15,18 @@ export interface TranscriptSegment {
   text: string;
 }
 
+export type VisualKind = 'action' | 'reaction' | 'funny' | 'emotional' | 'reveal' | 'highlight' | 'other';
+
+/** Something that happens on screen, from Gemini watching the video. */
+export interface VisualMoment {
+  start: number; // seconds, from source video start
+  end: number;
+  kind: VisualKind;
+  /** 0-100: how gripping it is. */
+  intensity: number;
+  description: string;
+}
+
 /** One caption word with its time on the source video's timeline. */
 export interface TimedWord {
   text: string;
@@ -78,6 +90,8 @@ export interface Job {
   sourceVideoPath?: string;
   sourceDurationSec?: number;
   transcript?: TranscriptSegment[];
+  /** What Gemini saw when it watched the video, and which part it watched. */
+  visual?: { range: { start: number; end: number }; moments: VisualMoment[] };
   suggestions?: ClipSuggestion[];
   clips?: RenderedClip[];
   progress: JobProgressStep[];

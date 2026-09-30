@@ -35,14 +35,16 @@ interface JobData {
   sourceRetentionDays?: number;
   options?: JobOptions;
   canSearch?: boolean;
+  watched?: boolean;
   finishedAt?: string;
   lastSearch?: { topic: string; at: string; added: number; message: string };
 }
 
-/** What was chosen for the job, as short labels. */
-function optionLabels(options?: JobOptions): string[] {
-  if (!options) return [];
+/** What was chosen for the job (and whether Gemini watched it), as short labels. */
+function optionLabels(options?: JobOptions, watched?: boolean): string[] {
+  if (!options) return watched ? ['Tittade på bilden'] : [];
   return [
+    watched ? 'Tittade på bilden' : '',
     options.topic ? `Om: ${options.topic}` : '',
     options.clipLength === 'auto' ? '' : clipLength(options.clipLength).hint,
     options.aspect,
@@ -115,7 +117,7 @@ export default function JobPage() {
   const planned = job.suggestions?.length;
   // A search for more clips in a job that already finished.
   const searching = !!job.finishedAt && !isDone && !isError;
-  const labels = optionLabels(job.options);
+  const labels = optionLabels(job.options, job.watched);
 
   async function deleteJob() {
     if (!window.confirm('Ta bort jobbet med alla klipp och källvideon? Det går inte att ångra.')) return;
@@ -181,6 +183,7 @@ export default function JobPage() {
         <SearchMore
           jobId={job.id}
           defaultLength={job.options?.clipLength ?? 'auto'}
+          canWatch={!job.watched}
           onStarted={() => setPollKey((k) => k + 1)}
         />
       )}

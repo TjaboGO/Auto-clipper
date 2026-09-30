@@ -6,17 +6,22 @@ och appen:
 1. Transkriberar ljudet med Gemini (hela videon, eller bara den del du väljer)
 2. Låter Gemini agera videoredaktör och plockar ut de bästa, mest klippbara ögonblicken, eller
    de bästa ögonblicken om ett ämne du skriver in ("hitta ögonblick om pengar")
-3. Klipper ut varje ögonblick, beskär det till stående 9:16-format och följer den som pratar i
+3. Tittar på själva videon med Gemini när det är lite prat (sport, gaming, reaktioner), så den
+   hittar mål, reaktioner och roliga ögonblick även där ingen säger något. Klipp utan prat får
+   rubriken som text istället
+4. Klipper ut varje ögonblick, beskär det till stående 9:16-format och följer den som pratar i
    bild (ansiktsspårning med OpenCV). Pratar två personer i snabb växling delas bilden istället, med
-   en person upptill och en nedtill
-4. Bränner in animerade texter i CapCut/TikTok-stil, några ord i taget med ordet som sägs just nu
+   en person upptill och en nedtill. Syns inga ansikten följer bilden det som rör sig, till exempel
+   bollen
+5. Bränner in animerade texter i CapCut/TikTok-stil, några ord i taget med ordet som sägs just nu
    i guld. Whisper lyssnar på varje klipp så att orden lyser upp exakt när de sägs, och klippen
    börjar och slutar på riktiga ordgränser
-5. Ger dig färdiga klipp att ladda ner, plus förslag på titel, bildtext och hashtags för varje
+6. Ger dig färdiga klipp att ladda ner, plus förslag på titel, bildtext och hashtags för varje
    klipp
-6. Låter dig välja klipplängd, format, textstil och om AI:n ska markera nyckelorden redan när du
-   startar, och hitta fler klipp i samma video efteråt utan att den transkriberas igen
-7. Låter dig finjustera varje klipp i en redigerare med förhandsvisning direkt i webbläsaren:
+7. Låter dig välja klipplängd, format, textstil, om AI:n ska markera nyckelorden och om den ska
+   titta på bilden redan när du startar, och hitta fler klipp i samma video efteråt utan att den
+   transkriberas igen
+8. Låter dig finjustera varje klipp i en redigerare med förhandsvisning direkt i webbläsaren:
    klipp bort ord i texten, ta bort utfyllnadsord och pauser, dra i start och slut, rätta
    stavning, byt textstil, typsnitt, format och layout, beskär själv och lägg till en rubrik.
    Sen renderar du om klippet med ett klick
@@ -71,10 +76,14 @@ Basic Auth i Coolify.
   10 minuter och transkriberas en bit i taget, så svaren aldrig blir för långa och tidsstämplarna
   håller sig exakta även för långa videor. Sen får Gemini (som redaktör) välja ut de bästa klippen
   i vald längd, eller de bästa om ett ämne, med titel, bildtext, hashtags, ett "virality score"
-  och klippets nyckelord (de markeras i texten). Båda anropen använder ett JSON-schema, och
-  kvotfel och tillfälliga serverfel försöks om automatiskt.
+  och klippets nyckelord (de markeras i texten). Gemini kan också titta på videon: en liten kopia
+  (en bild per sekund, kortsidan 360 px, ljudet i mono) laddas upp i bitar på max 10 minuter, och
+  Gemini listar det som händer i bild (händelser, reaktioner, roliga ögonblick, avslöjanden) med
+  tider, typ och hur starkt det är. Redaktören får sen både transkriptet och den listan. Alla anrop
+  använder ett JSON-schema, och kvotfel och tillfälliga serverfel försöks om automatiskt.
 - `src/lib/jobOptions.ts` - valen när ett jobb startas: klipplängd, format, textstil, nyckelord,
-  ämne och del av videon. Samma kontroll av värdena i formuläret och på servern.
+  ämne, del av videon och om AI:n ska titta på bilden. Samma kontroll av värdena i formuläret och
+  på servern.
 - `scripts/smart_crop.py` - bestämmer hur varje klipp beskärs. ffmpeg avkodar och skalar ner tio
   bilder per sekund ur klippet, och YuNet (OpenCV:s ansiktsdetektor) hittar ansiktena och var ögon
   och mun sitter. Varje person får ett eget spår genom klippet. När det hörs tal jämförs
@@ -82,13 +91,18 @@ Basic Auth i Coolify.
   från någon annan räcker inte för ett byte. Rör sig personen panorerar kameran mjukt. Pratar två
   personer i snabb växling blir klippet split screen istället, och texten hamnar i skarven mellan
   dem. Modellen (MIT-licens) ligger i `assets/models`. Saknas den används OpenCV:s äldre
-  Haar-detektor, som bara följer det största ansiktet.
+  Haar-detektor, som bara följer det största ansiktet. Finns inga ansikten, eller bara små (som en
+  facecam i ett hörn), följer beskärningen rörelsen istället: kamerans egen rörelse räknas bort med
+  optiskt flöde, och bilden panorerar mjukt dit det händer mest.
 - `scripts/word_timing.py` + `src/lib/wordTiming.ts` - när Gemini valt klippen lyssnar Whisper
   (faster-whisper) på vart och ett och säger när varje ord sägs. Orden matchas mot Geminis text
   (felhörda, missade och extra ord hanteras, liksom sammansatta ord som delats olika), och
   klippets start och slut flyttas till riktiga ordgränser så inget klipp börjar eller slutar mitt i
   ett ord. Om Whisper inte kan köras, eller matchningen blir för osäker, används den uppskattade
-  timingen istället, så jobbet går alltid igenom.
+  timingen istället, så jobbet går alltid igenom. Klipp där ingen pratar hoppas över.
+- `src/lib/moments.ts` - hjälp för det Gemini såg: hur stor del av videon som har prat, och vilka
+  klippkanter som ligger vid något som händer i bild. Sådana kanter flyttas bara utåt, aldrig
+  inåt, så uppbyggnaden före ett mål och jublet efter blir kvar.
 - `src/lib/captions.ts` - bygger en `.ass`-undertextfil per klipp i vald stil: Karaoke (ordet som
   sägs lyser), Box (färgad ruta bakom ordet), Pop (ordet växer), Ord för ord och Enkel, plus
   rubriken överst. Nio fria typsnitt (SIL OFL och Apache 2.0, licenserna ligger i
@@ -109,9 +123,11 @@ Basic Auth i Coolify.
   och inställningarna. Ångra och gör om, autospar och kortkommandon (mellanslag spelar, Delete
   klipper bort markerade ord, Ctrl+Z ångrar, pilarna spolar).
 - `src/lib/pipeline.ts` - kopplar ihop alla steg ovan och uppdaterar jobbets status så frontend kan
-  visa live-progress. Om ett klipp misslyckas fortsätter resten. "Hitta fler klipp" frågar Gemini
-  igen på den transkribering jobbet redan har, undviker det som redan är klipp och lägger till de
-  nya klippen i samma jobb.
+  visa live-progress. Om ett klipp misslyckas fortsätter resten. I läget Auto tittar Gemini på
+  bilden när mindre än halva videon har prat, eller när videon saknar ljud. Misslyckas det, men
+  någon pratar, väljs klippen från det som sägs. "Hitta fler klipp" frågar Gemini igen på den
+  transkribering (och det den sett i bild) jobbet redan har, kan låta Gemini titta på videon först,
+  undviker det som redan är klipp och lägger till de nya klippen i samma jobb.
 - `src/lib/youtube.ts` - hämtar videon med `yt-dlp` om du klistrar in en länk istället för att
   ladda upp en fil.
 - Jobb körs i en enkel kö i minnet (`src/lib/queue.ts`) och sparas till `storage/jobs.json`, så
@@ -126,9 +142,11 @@ Basic Auth i Coolify.
 - Båda tar valfritt `options` (JSON, som query-parameter vid uppladdning):
   `{ "clipLength": "auto|short|medium|long|xlong", "aspect": "9:16|1:1|4:5|16:9",
   "captionPreset": "karaoke|box|pop|word|clean", "keywords": true, "topic": "pengar",
-  "range": { "start": 60, "end": 600 } }`.
-- `POST /api/jobs/<id>/search` med `{ "topic": "...", "clipCount": 3, "clipLength": "short" }`
-  hittar fler klipp i ett klart jobb.
+  "range": { "start": 60, "end": 600 }, "visual": "auto|on|off" }`. `visual` styr om Gemini
+  tittar på bilden: när det är lite prat (`auto`), alltid, eller aldrig.
+- `POST /api/jobs/<id>/search` med `{ "topic": "...", "clipCount": 3, "clipLength": "short",
+  "watch": true }` hittar fler klipp i ett klart jobb. `watch` låter Gemini titta på videon först,
+  om den inte redan gjort det.
 - `GET /api/jobs/<id>` för status och klipp, `GET /api/jobs` för de senaste jobben,
   `DELETE /api/jobs/<id>` tar bort ett jobb med alla filer.
 - Redigeraren: `GET /api/jobs/<id>/clips/<clipId>/editor` (ord, analys, redigering, förhandsvideo),
@@ -149,8 +167,14 @@ Basic Auth i Coolify.
 - **Förhandsvisningen är en lättare kopia.** Den visar exakt vad som renderas men i lägre
   upplösning, och där ordtiderna är uppskattade kan klipp mitt i meningar se lite ojämna ut tills
   klippet renderats (då tas exakta tider fram).
-- **Sökningen letar i det som sägs.** Ett ämne hittas bara om någon pratar om det. Saker som
-  bara syns i bild (ett mål i en match, en rolig min) hittar den inte än, det är fas 5.
+- **Bildanalysen ser en bild per sekund.** Saker som går väldigt fort kan missas eller få lite fel
+  tid. Den kostar också mer Gemini-kvot och tid än att bara lyssna, så i läget Auto körs den bara
+  när det är lite prat. En sökning efter ett ämne som bara syns i bild (ett mål, en rolig min)
+  kräver att Gemini har tittat på videon, välj "Alltid" eller kryssa i rutan under "Hitta fler
+  klipp".
+- **Rörelseföljningen är enkel.** Den följer där det rör sig mest, så i en bild med rörelse
+  överallt (publik, konfetti, snabba kameraåkningar) kan den välja fel. Då kan du beskära själv i
+  redigeraren.
 - **Redigeraren har inte allt som Opus har.** Det finns ingen B-roll, musik, emojis, logotyp,
   övergångar eller publicering direkt till TikTok och YouTube. Split screen-halvorna följer
   personerna automatiskt och kan bara byta plats, inte beskäras för hand.
@@ -183,4 +207,5 @@ ordtiming, `yt-dlp` för YouTube-nedladdning.
    textstilar, format, layout, manuell beskärning, rubrik, rendera om~~ (klar)
 4. ~~Fler val när jobbet startas: klipplängd, format, textstil, sökruta ("hitta ögonblick om X"),
    nyckelord i texten, del av videon, och "hitta fler klipp" i efterhand~~ (klar)
-5. Låta Gemini titta på videon, så det funkar även för innehåll utan prat
+5. ~~Låta Gemini titta på videon, så det funkar även för innehåll utan prat, och följa rörelsen
+   när det inte finns några ansikten~~ (klar)

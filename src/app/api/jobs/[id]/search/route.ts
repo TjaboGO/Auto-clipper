@@ -7,9 +7,10 @@ import { canSearch, enqueueSearch } from '@/lib/pipeline';
 export const runtime = 'nodejs';
 
 /**
- * Find more clips in a finished job: `{ topic, clipCount, clipLength }`.
+ * Find more clips in a finished job: `{ topic, clipCount, clipLength, watch }`.
  * An empty topic means "more of the best moments". Uses the transcript the
- * job already has, so no new transcription.
+ * job already has, so no new transcription; `watch` lets Gemini watch the
+ * video first if it hasn't.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     topic: sanitizeTopic(body?.topic),
     clipCount: Number.isNaN(count) ? 3 : Math.min(10, Math.max(1, count)),
     clipLength: clipLength(body?.clipLength ?? (job.options ?? defaultJobOptions()).clipLength).id,
+    watch: body?.watch === true,
   });
   return NextResponse.json({ queued: true }, { status: 202 });
 }

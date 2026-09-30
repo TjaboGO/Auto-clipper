@@ -5,12 +5,20 @@ import { CLIP_LENGTHS, MAX_TOPIC_LENGTH, type ClipLengthId } from '@/lib/jobOpti
 
 /**
  * "Find more clips" in a finished job: the best moments not clipped yet, or
- * moments about a topic. Runs on the transcript the job already has.
+ * moments about a topic. Runs on the transcript (and what Gemini saw on
+ * screen) the job already has, and can let Gemini watch the video first.
  */
-export function SearchMore(props: { jobId: string; defaultLength: ClipLengthId; onStarted: () => void }) {
+export function SearchMore(props: {
+  jobId: string;
+  defaultLength: ClipLengthId;
+  /** Gemini hasn't watched this video yet: offer it. */
+  canWatch: boolean;
+  onStarted: () => void;
+}) {
   const [topic, setTopic] = useState('');
   const [count, setCount] = useState(3);
   const [length, setLength] = useState<ClipLengthId>(props.defaultLength);
+  const [watch, setWatch] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,7 +30,7 @@ export function SearchMore(props: { jobId: string; defaultLength: ClipLengthId; 
       const res = await fetch(`/api/jobs/${props.jobId}/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, clipCount: count, clipLength: length }),
+        body: JSON.stringify({ topic, clipCount: count, clipLength: length, watch: props.canWatch && watch }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? 'Kunde inte starta sökningen.');
@@ -83,6 +91,17 @@ export function SearchMore(props: { jobId: string; defaultLength: ClipLengthId; 
           {sending ? 'Startar ...' : 'Sök'}
         </button>
       </div>
+      {props.canWatch && (
+        <label className="mt-3 flex items-center gap-2 text-sm text-gray-300 cursor-pointer w-fit">
+          <input
+            type="checkbox"
+            checked={watch}
+            onChange={(e) => setWatch(e.target.checked)}
+            className="h-4 w-4 accent-accent-500"
+          />
+          Låt AI:n titta på videon också (hittar ögonblick utan prat, tar lite längre tid)
+        </label>
+      )}
       {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
     </form>
   );

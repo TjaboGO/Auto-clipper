@@ -5,6 +5,15 @@ import type { AspectRatio, CaptionPresetId } from './edit/types';
 
 export type ClipLengthId = 'auto' | 'short' | 'medium' | 'long' | 'xlong';
 
+/** Let Gemini watch the video: when there's little talk (auto), always, or never. */
+export type VisualMode = 'auto' | 'on' | 'off';
+
+export const VISUAL_MODES: { id: VisualMode; label: string; hint: string }[] = [
+  { id: 'auto', label: 'Auto', hint: 'När det är lite prat' },
+  { id: 'on', label: 'Alltid', hint: 'Sport, spel, reaktioner' },
+  { id: 'off', label: 'Av', hint: 'Bara det som sägs' },
+];
+
 export interface ClipLength {
   id: ClipLengthId;
   label: string;
@@ -36,6 +45,8 @@ export interface JobOptions {
   topic: string;
   /** Only use this part of the video (seconds), or null for all of it. */
   range: { start: number; end: number } | null;
+  /** Gemini also watches the video, to find moments without talk. */
+  visual: VisualMode;
 }
 
 export const MAX_TOPIC_LENGTH = 200;
@@ -43,7 +54,15 @@ export const MAX_TOPIC_LENGTH = 200;
 export const MIN_RANGE_SECONDS = 10;
 
 export function defaultJobOptions(): JobOptions {
-  return { clipLength: 'auto', aspect: '9:16', captionPreset: 'karaoke', keywords: true, topic: '', range: null };
+  return {
+    clipLength: 'auto',
+    aspect: '9:16',
+    captionPreset: 'karaoke',
+    keywords: true,
+    topic: '',
+    range: null,
+    visual: 'auto',
+  };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -78,6 +97,7 @@ export function sanitizeJobOptions(raw: unknown): JobOptions {
     keywords: typeof raw.keywords === 'boolean' ? raw.keywords : defaults.keywords,
     topic: sanitizeTopic(raw.topic),
     range,
+    visual: pick(raw.visual, VISUAL_MODES.map((m) => m.id), defaults.visual),
   };
 }
 

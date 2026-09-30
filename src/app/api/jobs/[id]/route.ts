@@ -20,8 +20,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   // Don't leak internal filesystem paths to the client, and leave out the
-  // full transcript - it can be large and this endpoint is polled.
-  const { sourceVideoPath: _path, transcript: _transcript, ...publicJob } = job;
+  // full transcript and what Gemini saw - they can be large and this
+  // endpoint is polled.
+  const { sourceVideoPath: _path, transcript: _transcript, visual, ...publicJob } = job;
   return NextResponse.json({
     job: {
       ...publicJob,
@@ -29,6 +30,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       sourceAvailable: sourceAvailable(job),
       sourceRetentionDays: config.sourceRetentionDays,
       canSearch: canSearch(job.id),
+      watched: !!visual,
+      visualMoments: visual?.moments.length ?? 0,
     },
   });
 }

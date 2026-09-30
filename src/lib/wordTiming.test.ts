@@ -309,6 +309,19 @@ test('a clip that cut into its first word is extended, not cut shorter', () => {
   assert.equal(Math.round(edges.end * 100) / 100, 20.35);
 });
 
+test('edges at something on screen are only widened', () => {
+  const words = [
+    { text: 'okej', start: 11.0, end: 11.3, seg: 0 },
+    { text: 'slut', start: 19.6, end: 20.0, seg: 0 },
+  ];
+  // The clip starts in the build-up to a goal and ends in its payoff: keep both.
+  const held = snapClipToWords({ start: 10, end: 21 }, words, words, 60, { start: true, end: true });
+  assert.deepEqual(held, { start: 10, end: 21 });
+  // Only the start is held; the end still tightens to the last word.
+  const start = snapClipToWords({ start: 10, end: 21 }, words, words, 60, { start: true, end: false });
+  assert.deepEqual([start.start, Math.round(start.end * 100) / 100], [10, 20.35]);
+});
+
 test('clip edges stay put if they would jump suspiciously far', () => {
   const words = [
     { text: 'okej', start: 16.0, end: 16.3, seg: 0 },

@@ -63,6 +63,14 @@ export function Transcript(props: TranscriptProps) {
     else groups.push({ seg: w.seg, items: [i] });
   });
 
+  if (words.length === 0) {
+    return (
+      <p className="text-sm text-gray-400">
+        Ingen pratar i det här klippet. Ändra start och slut på tidslinjen, och använd rubriken som text.
+      </p>
+    );
+  }
+
   return (
     <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto pr-2 leading-8 text-[15px] select-none">
       {groups.map((group) => (
