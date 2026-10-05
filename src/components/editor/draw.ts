@@ -67,6 +67,22 @@ export function drawFrame(ctx: CanvasRenderingContext2D, video: HTMLVideoElement
 }
 
 /** Manual framing: the whole source frame with the crop window on it. */
+/** The logo, where logoRect puts it in the render (under the captions). */
+export function drawLogo(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  rect: { x: number; y: number; w: number; h: number },
+  opacity: number,
+  k: number,
+): void {
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(image, rect.x * k, rect.y * k, rect.w * k, rect.h * k);
+  ctx.restore();
+}
+
 export function drawCropView(
   ctx: CanvasRenderingContext2D,
   video: HTMLVideoElement,

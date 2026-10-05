@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import type { CaptionMetrics, CaptionPage, TitleMetrics } from '@/lib/edit/captionLayout';
 import { cxAt, playableTime, toOutputTime, toSourceTime } from '@/lib/edit/timeline';
-import type { ClipEdit, TimeRange } from '@/lib/edit/types';
-import { drawCaptions, drawCropView, drawFrame, drawTitle, type FrameSpec } from './draw';
+import { logoRect } from '@/lib/edit/layout';
+import type { ClipEdit, LogoImage, TimeRange } from '@/lib/edit/types';
+import { drawCaptions, drawCropView, drawFrame, drawLogo, drawTitle, type FrameSpec } from './draw';
 import { formatTime } from './format';
 import type { PreviewInfo } from './types';
 
@@ -34,6 +35,8 @@ interface PreviewProps {
   /** The playhead moved (source time, a few times a second). */
   onTime: (t: number) => void;
   fontsReady: boolean;
+  /** Your logo, if you've uploaded one (edit.logo says whether it shows). */
+  logo: LogoImage | null;
 }
 
 export function Preview(props: PreviewProps) {
@@ -47,6 +50,8 @@ export function Preview(props: PreviewProps) {
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(props.edit.start);
   const [size, setSize] = useState({ w: 0, h: 0 });
+  const logoImage = useRef<HTMLImageElement | null>(null);
+  const [logoLoads, setLogoLoads] = useState(0);
 
   const sourceTime = () => propsRef.current.windowStart + (videoRef.current?.currentTime ?? 0);
 
@@ -65,6 +70,9 @@ export function Preview(props: PreviewProps) {
     const k = canvas.width / p.spec.out.w;
     const o = toOutputTime(p.kept, t);
     if (o !== null) {
+      if (p.edit.logo.enabled && p.logo && logoImage.current) {
+        drawLogo(ctx, logoImage.current, logoRect(p.spec.out, p.logo, p.edit.logo), p.edit.logo.opacity, k);
+      }
       drawCaptions(ctx, p.pages, o, p.edit.captions, p.metrics, p.spec.out, k);
       if (p.edit.title.enabled && o < p.titleMetrics.until) {
         drawTitle(ctx, p.edit.title.text, p.titleMetrics, p.spec.out, k);
@@ -183,10 +191,23 @@ export function Preview(props: PreviewProps) {
     return () => video.removeEventListener('loadedmetadata', start);
   }, [props.preview.url, seek]);
 
+  // The logo image, loaded again only when it's replaced.
+  const logoVersion = props.logo?.version;
+  useEffect(() => {
+    logoImage.current = null;
+    if (!logoVersion) return;
+    const image = new Image();
+    image.onload = () => {
+      logoImage.current = image;
+      setLogoLoads((n) => n + 1);
+    };
+    image.src = `/api/brand/logo?v=${logoVersion}`;
+  }, [logoVersion]);
+
   // Redraw whenever anything that shows changes.
   useEffect(() => {
     draw();
-  }, [draw, props.spec, props.edit, props.pages, props.metrics, props.cropMode, props.fontsReady, size]);
+  }, [draw, props.spec, props.edit, props.pages, props.metrics, props.cropMode, props.fontsReady, props.logo, logoLoads, size]);
 
   // If the start of the clip was just cut away (or moved later), don't sit
   // on something that's no longer in it: go to the new first frame.

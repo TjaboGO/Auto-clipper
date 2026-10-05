@@ -1,4 +1,4 @@
-import type { AspectRatio, FramingAnalysis, LayoutMode, SourceInfo } from './types';
+import type { AspectRatio, FramingAnalysis, LayoutMode, LogoSettings, SourceInfo } from './types';
 
 export interface OutputSize {
   w: number;
@@ -105,6 +105,34 @@ export function fitRect(source: SourceInfo, out: OutputSize): { x: number; y: nu
 }
 
 /** Caption position when the user hasn't picked one: lower third, or the seam of a split screen. */
+// Space between the logo and the frame's edges (share of the short side),
+// and the most of the frame's height a tall logo may take.
+const LOGO_MARGIN = 0.04;
+const LOGO_MAX_HEIGHT = 0.25;
+
+/** Where the logo goes in the finished frame, in output pixels. */
+export function logoRect(
+  out: OutputSize,
+  image: { width: number; height: number },
+  logo: LogoSettings,
+): { x: number; y: number; w: number; h: number } {
+  let w = out.w * logo.size;
+  let h = (w * image.height) / image.width;
+  if (h > out.h * LOGO_MAX_HEIGHT) {
+    h = out.h * LOGO_MAX_HEIGHT;
+    w = (h * image.width) / image.height;
+  }
+  w = Math.max(2, Math.round(w));
+  h = Math.max(2, Math.round(h));
+  const margin = Math.round(Math.min(out.w, out.h) * LOGO_MARGIN);
+  return {
+    x: logo.corner.endsWith('left') ? margin : out.w - w - margin,
+    y: logo.corner.startsWith('top') ? margin : out.h - h - margin,
+    w,
+    h,
+  };
+}
+
 export function defaultCaptionPosition(layout: ResolvedLayout, aspect: AspectRatio): number {
   if (layout === 'split') return 0.5;
   return aspect === '16:9' ? 0.84 : aspect === '9:16' ? 0.72 : 0.78;

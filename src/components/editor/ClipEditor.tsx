@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { captionMetrics, captionPages, titleMetrics } from '@/lib/edit/captionLayout';
 import { OUTPUT_SIZES, resolveLayout, singleCrop } from '@/lib/edit/layout';
 import { MIN_CLIP_SECONDS } from '@/lib/edit/presets';
+import { CAPTION_FONTS, setCustomFonts } from '@/lib/edit/fonts';
 import {
   applyReframe,
   clipWords,
@@ -18,7 +19,7 @@ import {
   toOutputTime,
   toSourceTime,
 } from '@/lib/edit/timeline';
-import type { ClipEdit, WordOverride } from '@/lib/edit/types';
+import type { BrandInfo, ClipEdit, WordOverride } from '@/lib/edit/types';
 import type { RenderedClip } from '@/lib/types';
 import type { FrameSpec } from './draw';
 import { formatTime } from './format';
@@ -70,7 +71,12 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
   const [clip, setClip] = useState<RenderedClip>(initial.clip);
   const [preview, setPreview] = useState<PreviewInfo>(initial.preview);
   const { edit, set, undo, redo, canUndo, canRedo } = useEditHistory(initial.edit);
-  const fontsReady = useCaptionFonts();
+  const [brand, setBrand] = useState<BrandInfo>(initial.brand ?? { fonts: [], logo: null, style: null });
+  const updateBrand = useCallback((next: BrandInfo) => {
+    setCustomFonts(next.fonts);
+    setBrand(next);
+  }, []);
+  const fontsReady = useCaptionFonts([...CAPTION_FONTS, ...brand.fonts]);
   const previewRef = useRef<PreviewHandle>(null);
   const [time, setTime] = useState(initial.edit.start);
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -504,6 +510,7 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             onReframe={onReframe}
             onTime={setTime}
             fontsReady={fontsReady}
+            logo={brand.logo}
           />
         </section>
 
@@ -518,6 +525,8 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             onCropMode={setCropMode}
             time={time}
             fontsReady={fontsReady}
+            brand={brand}
+            onBrand={updateBrand}
           />
         </aside>
       </div>

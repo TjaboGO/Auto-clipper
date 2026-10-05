@@ -65,6 +65,8 @@ export interface RenderGraphInput {
   hasAudio: boolean;
   /** The ass=... filter that burns in the captions. */
   captionsFilter: string;
+  /** Your logo (ffmpeg input 1), placed under the captions. */
+  logo?: { rect: { x: number; y: number; w: number; h: number }; opacity: number };
 }
 
 /** The video part of the graph up to the finished frame: crop, split screen or fit. */
@@ -128,6 +130,13 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
     video += `,select='${inside}',setpts='(T-(${offset}))/TB'`;
   }
   let graph = `${video},${input.captionsFilter}[vout]`;
+  if (input.logo) {
+    const { rect, opacity } = input.logo;
+    graph =
+      `${video}[base];` +
+      `[1:v]scale=${rect.w}:${rect.h},format=rgba,colorchannelmixer=aa=${num(opacity)}[logo];` +
+      `[base][logo]overlay=${rect.x}:${rect.y},${input.captionsFilter}[vout]`;
+  }
   const maps = ['-map', '[vout]'];
 
   if (!input.hasAudio) return { graph, maps };

@@ -1,20 +1,32 @@
 'use client';
 
 import { useRef, useState, type ReactNode } from 'react';
+import { logoUrl, saveStyle, uploadFont, uploadLogo } from '@/components/brandApi';
 import { AspectIcon, CaptionPresetPicker } from '@/components/CaptionStyleParts';
-import { CAPTION_FONTS, cssFontFamily } from '@/lib/edit/fonts';
+import { FileButton } from '@/components/FileButton';
+import { CAPTION_FONTS, cssFontFamily, type CaptionFont } from '@/lib/edit/fonts';
 import { ASPECT_LABELS, splitAllowed, type ResolvedLayout } from '@/lib/edit/layout';
-import { captionPreset, presetCaptions } from '@/lib/edit/presets';
+import { captionPreset, LOGO_CORNERS, presetCaptions, withStyle } from '@/lib/edit/presets';
 import type {
   AspectRatio,
+  BrandInfo,
   CaptionSettings,
   ClipEdit,
   FramingAnalysis,
   LayoutMode,
+  LogoCorner,
+  LogoSettings,
 } from '@/lib/edit/types';
 import { formatTime } from './format';
 
-type Tab = 'text' | 'layout' | 'title';
+type Tab = 'text' | 'layout' | 'title' | 'logo';
+
+const CORNER_LABELS: Record<LogoCorner, string> = {
+  'top-left': 'Uppe till vänster',
+  'top-right': 'Uppe till höger',
+  'bottom-left': 'Nere till vänster',
+  'bottom-right': 'Nere till höger',
+};
 
 interface SettingsPanelProps {
   edit: ClipEdit;
@@ -28,6 +40,9 @@ interface SettingsPanelProps {
   /** Playhead, source time. */
   time: number;
   fontsReady: boolean;
+  /** Your fonts, logo and "Min stil". */
+  brand: BrandInfo;
+  onBrand: (brand: BrandInfo) => void;
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -123,6 +138,20 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
   );
 }
 
+function FontButton(props: { font: CaptionFont; active: boolean; fontsReady: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      title={props.font.label}
+      className={`rounded-md border px-2 py-1.5 text-left text-sm truncate ${props.active ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
+      style={{ fontFamily: props.fontsReady ? `"${cssFontFamily(props.font)}"` : undefined }}
+    >
+      {props.font.label}
+    </button>
+  );
+}
+
 export function SettingsPanel(props: SettingsPanelProps) {
   const { edit, set } = props;
   const [tab, setTab] = useState<Tab>('text');
@@ -131,6 +160,58 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const setCaptions = (patch: Partial<CaptionSettings>, key?: string) =>
     set({ ...edit, captions: { ...captions, ...patch } }, key);
   const splitPossible = !!props.analysis?.split && splitAllowed(edit.aspect);
+  const { brand, onBrand } = props;
+  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | null>(null);
+  const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
+  const setLogo = (patch: Partial<LogoSettings>, key?: string) => set({ ...edit, logo: { ...edit.logo, ...patch } }, key);
+
+  async function run(what: 'font' | 'logo' | 'style', job: () => Promise<string | null>) {
+    setBusy(what);
+    setMessage(null);
+    try {
+      const text = await job();
+      if (text) setMessage({ text });
+    } catch (err) {
+      setMessage({ text: err instanceof Error ? err.message : String(err), error: true });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const addFont = (file: File) =>
+    run('font', async () => {
+      const { font, brand: next } = await uploadFont(file);
+      onBrand(next);
+      setCaptions({ font: font.id });
+      return font.nordic
+        ? `${font.label} är tillagt.`
+        : `${font.label} är tillagt, men saknar å, ä eller ö. De bokstäverna visas med ett annat typsnitt.`;
+    });
+
+  const addLogo = (file: File) =>
+    run('logo', async () => {
+      onBrand(await uploadLogo(file));
+      setLogo({ enabled: true });
+      return 'Loggan är uppladdad. Den gäller alla klipp där du slår på den.';
+    });
+
+  const saveAsMine = () =>
+    run('style', async () => {
+      onBrand(
+        await saveStyle({
+          captions: edit.captions,
+          title: { enabled: edit.title.enabled, duration: edit.title.duration },
+          logo: edit.logo,
+        }),
+      );
+      return 'Sparad som Min stil. Välj Min stil när du skapar klipp, så får de den här looken.';
+    });
+
+  const applyMine = () => {
+    if (!brand.style) return;
+    set(withStyle(edit, brand.style, !!brand.logo));
+    setMessage({ text: 'Min stil är använd på klippet.' });
+  };
 
   const layouts: { id: LayoutMode; label: string; hint: string; disabled?: boolean }[] = [
     { id: 'auto', label: 'Auto', hint: 'Följer den som pratar, split screen vid snabba växlingar' },
@@ -146,12 +227,43 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
   return (
     <div className="flex flex-col h-full min-h-0">
+      <div className="flex items-center gap-1.5 mb-3">
+        <span className="text-xs font-semibold uppercase tracking-wide text-gray-400 mr-auto whitespace-nowrap">Min stil</span>
+        {brand.style && (
+          <button
+            type="button"
+            onClick={applyMine}
+            className="rounded-md px-2.5 py-1 text-xs font-medium bg-base-800 hover:bg-base-700"
+            title="Ge klippet den sparade stilen: text, rubrik och logga"
+          >
+            Använd
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={saveAsMine}
+          disabled={busy === 'style'}
+          className="rounded-md px-2.5 py-1 text-xs font-medium bg-base-800 hover:bg-base-700 disabled:opacity-50"
+          title="Spara klippets text, rubrik och logga som Min stil, för nya klipp"
+        >
+          {busy === 'style' ? 'Sparar ...' : 'Spara'}
+        </button>
+      </div>
+      {message && (
+        <p
+          role="status"
+          className={`mb-3 rounded-md px-3 py-2 text-xs ${message.error ? 'bg-red-500/15 text-red-200' : 'bg-accent-500/15 text-accent-300'}`}
+        >
+          {message.text}
+        </p>
+      )}
       <div className="flex gap-1 p-1 rounded-lg bg-base-900 mb-4" role="tablist">
         {(
           [
             ['text', 'Text'],
             ['layout', 'Bild'],
             ['title', 'Rubrik'],
+            ['logo', 'Logga'],
           ] as [Tab, string][]
         ).map(([id, label]) => (
           <button
@@ -181,17 +293,34 @@ export function SettingsPanel(props: SettingsPanelProps) {
             <Section title="Typsnitt">
               <div className="grid grid-cols-2 gap-1.5">
                 {CAPTION_FONTS.map((f) => (
-                  <button
+                  <FontButton
                     key={f.id}
-                    type="button"
+                    font={f}
+                    active={captions.font === f.id}
+                    fontsReady={props.fontsReady}
                     onClick={() => setCaptions({ font: f.id })}
-                    className={`rounded-md border px-2 py-1.5 text-left text-sm truncate ${captions.font === f.id ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
-                    style={{ fontFamily: props.fontsReady ? `"${cssFontFamily(f)}"` : undefined }}
-                  >
-                    {f.label}
-                  </button>
+                  />
                 ))}
               </div>
+              {brand.fonts.length > 0 && (
+                <>
+                  <p className="text-xs text-gray-400 pt-1">Dina typsnitt</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {brand.fonts.map((f) => (
+                      <FontButton
+                        key={f.id}
+                        font={f}
+                        active={captions.font === f.id}
+                        fontsReady={props.fontsReady}
+                        onClick={() => setCaptions({ font: f.id })}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+              <FileButton accept=".ttf,.otf,font/ttf,font/otf" busy={busy === 'font'} onFile={addFont}>
+                + Eget typsnitt (.ttf, .otf)
+              </FileButton>
             </Section>
             <Slider
               label="Storlek"
@@ -389,6 +518,68 @@ export function SettingsPanel(props: SettingsPanelProps) {
             <p className="text-xs text-gray-400">
               En kort rubrik i början får fler att stanna kvar. Förslaget kommer från AI:n.
             </p>
+          </>
+        )}
+
+        {tab === 'logo' && (
+          <>
+            {brand.logo ? (
+              <>
+                <div className="flex items-center gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={logoUrl(brand.logo.version)}
+                    alt="Din logga"
+                    className="h-14 w-20 object-contain rounded bg-[repeating-conic-gradient(#2a2a35_0%_25%,#1f1f28_0%_50%)] bg-[length:12px_12px]"
+                  />
+                  <FileButton accept="image/png,image/jpeg,image/webp" busy={busy === 'logo'} onFile={addLogo}>
+                    Byt logga
+                  </FileButton>
+                </div>
+                <Toggle label="Visa logga" checked={edit.logo.enabled} onChange={(v) => setLogo({ enabled: v })} />
+                <Section title="Placering">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {LOGO_CORNERS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setLogo({ corner: c, enabled: true })}
+                        className={`rounded-md border px-2 py-1.5 text-sm ${edit.logo.corner === c ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
+                      >
+                        {CORNER_LABELS[c]}
+                      </button>
+                    ))}
+                  </div>
+                </Section>
+                <Slider
+                  label="Storlek"
+                  value={edit.logo.size}
+                  min={0.06}
+                  max={0.4}
+                  step={0.01}
+                  format={(v) => `${Math.round(v * 100)} %`}
+                  onChange={(v, key) => setLogo({ size: v }, key)}
+                />
+                <Slider
+                  label="Synlighet"
+                  value={edit.logo.opacity}
+                  min={0.2}
+                  max={1}
+                  step={0.05}
+                  format={(v) => `${Math.round(v * 100)} %`}
+                  onChange={(v, key) => setLogo({ opacity: v }, key)}
+                />
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-300">
+                  Lägg din logga i ett hörn av klippen. En PNG med genomskinlig bakgrund blir snyggast.
+                </p>
+                <FileButton accept="image/png,image/jpeg,image/webp" busy={busy === 'logo'} onFile={addLogo}>
+                  Ladda upp logga
+                </FileButton>
+              </>
+            )}
           </>
         )}
       </div>

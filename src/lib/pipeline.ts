@@ -12,7 +12,8 @@ import { analyzeFraming } from './smartCrop';
 import { renderClipEdit } from './render';
 import { dropSource, sourceAvailable, writeClipEdit, writeEditorData } from './editor';
 import { buildEditorWords, editWindow, keywordWordIds, needsFramingAnalysis } from './editorWords';
-import { defaultEdit } from './edit/presets';
+import { defaultEdit, withStyle } from './edit/presets';
+import { brandInfo, brandStyle } from './brand';
 import { clipWords } from './edit/timeline';
 import type { SourceInfo } from './edit/types';
 import {
@@ -24,7 +25,7 @@ import {
   type JobOptions,
 } from './jobOptions';
 import { computeWordTimings, whisperModelIsCached, type ClipTiming } from './wordTiming';
-import { downloadFromUrl } from './youtube';
+import { downloadFromUrl, type DownloadProgress } from './youtube';
 import { speechShare } from './moments';
 import type { ClipSuggestion, JobStatus, RenderedClip, TranscriptSegment, VisualMoment } from './types';
 
@@ -53,6 +54,28 @@ function describeTiming(clips: ClipTiming[], problem?: string): string {
     return `Exakt ordtiming för ${exact} av ${spoken.length} klipp${which}, resten använder uppskattad timing.`;
   }
   return `Kunde inte ta fram exakt ordtiming${problem ? ` (${problem})` : ''}. Använder uppskattad timing.`;
+}
+
+/**
+ * Show how far a download has come, as one line in the job log that is
+ * updated at most every other second.
+ */
+function downloadProgress(jobId: string): (progress: DownloadProgress) => void {
+  let shownAt = 0;
+  let shownPart = '';
+  return ({ percent, part }) => {
+    const now = Date.now();
+    if (part === shownPart && now - shownAt < 2000 && percent < 100) return;
+    shownAt = now;
+    shownPart = part;
+    const what = part === 'video' ? 'bilden' : part === 'audio' ? 'ljudet' : 'videon';
+    jobStore.setLiveProgress(jobId, {
+      step: 'downloading',
+      message: `Laddar ner ${what}: ${Math.floor(percent)} %`,
+      at: new Date().toISOString(),
+      key: `download-${part}`,
+    });
+  };
 }
 
 /** Put a freshly-created job on the background render queue. */
@@ -206,6 +229,10 @@ async function renderSuggestions(opts: {
     logProgress(jobId, 'rendering', describeTiming(timing.clips, timing.problem));
   }
 
+  // "Min stil": the look saved in the editor (the karaoke style if it's gone).
+  const mine = options.captionPreset === 'mine' ? brandStyle() : null;
+  const hasLogo = !!brandInfo().logo;
+
   const outDir = jobOutputDir(jobId);
   const failures: string[] = [];
   let rendered = 0;
@@ -229,13 +256,14 @@ async function renderSuggestions(opts: {
         source,
         analysis,
       };
-      const edit = defaultEdit({
+      let edit = defaultEdit({
         start,
         end,
         title: suggestion.title,
         aspect: options.aspect,
-        captionPreset: options.captionPreset,
+        captionPreset: options.captionPreset === 'mine' ? undefined : options.captionPreset,
       });
+      if (mine) edit = withStyle(edit, mine, hasLogo);
       const spoken = clipWords(data.words, edit);
       if (options.keywords && suggestion.keywords?.length) {
         for (const wordId of keywordWordIds(spoken, suggestion.keywords)) {
@@ -308,9 +336,18 @@ export async function processJob(jobId: string): Promise<void> {
     //    we need to fetch first with yt-dlp.
     let sourcePath = job.sourceVideoPath;
     if (job.source.type === 'youtube') {
-      logStep(jobId, 'downloading', `Laddar ner videon från ${job.source.url} ...`);
-      sourcePath = await downloadFromUrl(job.source.url, jobSourceDir(jobId));
-      jobStore.update(jobId, { sourceVideoPath: sourcePath });
+      const { url } = job.source;
+      logStep(jobId, 'downloading', `Laddar ner videon från ${url} ...`);
+      const downloaded = await downloadFromUrl(url, jobSourceDir(jobId), {
+        workDir,
+        onProgress: downloadProgress(jobId),
+      });
+      sourcePath = downloaded.path;
+      jobStore.update(jobId, {
+        sourceVideoPath: sourcePath,
+        source: { type: 'youtube', url, title: downloaded.title },
+      });
+      logProgress(jobId, 'downloading', downloaded.title ? `Hämtade "${downloaded.title}".` : 'Videon är hämtad.');
     }
     if (!sourcePath || !fs.existsSync(sourcePath)) {
       throw new Error('Källvideon saknas eller kunde inte hämtas.');

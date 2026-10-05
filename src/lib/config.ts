@@ -25,6 +25,13 @@ export const config = {
   // The editor's files per clip: words, framing, your edits, preview video.
   editorDir: path.join(/* turbopackIgnore: true */ storageDir, 'editor'),
   jobsFile: path.join(storageDir, 'jobs.json'),
+  // Your brand kit: fonts you uploaded, your logo and "Min stil".
+  brandDir: path.join(/* turbopackIgnore: true */ storageDir, 'brand'),
+  // Cookies for yt-dlp (a Netscape cookies.txt), for videos YouTube only
+  // lets signed-in users download. Saved from the settings page, or
+  // YTDLP_COOKIES points at a file of your own (then the page can't change it).
+  youtubeCookiesFile: process.env.YTDLP_COOKIES || path.join(storageDir, 'youtube-cookies.txt'),
+  youtubeCookiesFromEnv: !!process.env.YTDLP_COOKIES,
 
   // Long audio is transcribed in chunks of this many seconds. Keeps every
   // Gemini response far below the output token limit and keeps timestamps

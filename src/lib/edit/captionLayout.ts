@@ -139,8 +139,9 @@ export function captionMetrics(
     BASE_FONT_SIZE * settings.size * font.sizeFactor * frameScale * (wordByWord ? WORD_BY_WORD_SCALE : 1);
   const marginX = BASE_SIDE_MARGIN * (out.w / 1080);
   const relative = fontSize / BASE_FONT_SIZE;
+  // A wide font fits fewer letters on a line, a narrow one more.
   const maxChars = Math.round(
-    (BASE_PAGE_CHARS * ((out.w - 2 * marginX) / (1080 - 2 * BASE_SIDE_MARGIN))) / relative,
+    (BASE_PAGE_CHARS * ((out.w - 2 * marginX) / (1080 - 2 * BASE_SIDE_MARGIN))) / (relative * font.widthFactor),
   );
   const position = settings.position ?? defaultCaptionPosition(layout, aspect);
   return {

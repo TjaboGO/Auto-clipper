@@ -1,11 +1,15 @@
 'use client';
 
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AspectIcon, CaptionPresetPicker } from '@/components/CaptionStyleParts';
 import { useCaptionFonts } from '@/components/editor/useCaptionFonts';
+import { fetchBrand } from '@/components/brandApi';
 import { ASPECT_LABELS } from '@/lib/edit/layout';
-import { captionPreset } from '@/lib/edit/presets';
+import { CAPTION_PRESETS, captionPreset } from '@/lib/edit/presets';
+import { captionFont, setCustomFonts } from '@/lib/edit/fonts';
+import type { BrandInfo } from '@/lib/edit/types';
 import type { AspectRatio } from '@/lib/edit/types';
 import {
   CLIP_LENGTHS,
@@ -65,9 +69,14 @@ function uploadFile(
   });
 }
 
+// The style samples only need the fonts the presets use.
+const PRESET_FONTS = [...new Set(CAPTION_PRESETS.map((p) => p.style.font))].map(captionFont);
+
 export function UploadForm() {
   const router = useRouter();
-  const fontsReady = useCaptionFonts();
+  const [brand, setBrand] = useState<BrandInfo | null>(null);
+  const mineFont = brand?.style ? captionFont(brand.style.captions.font) : null;
+  const fontsReady = useCaptionFonts(mineFont ? [...PRESET_FONTS, mineFont] : PRESET_FONTS);
   const [mode, setMode] = useState<Mode>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState('');
@@ -88,6 +97,18 @@ export function UploadForm() {
     } catch {
       // private mode or broken JSON: keep the defaults
     }
+  }, []);
+
+  // "Min stil" and your fonts, for the style picker.
+  useEffect(() => {
+    fetchBrand()
+      .then((b) => {
+        setCustomFonts(b.fonts);
+        setBrand(b);
+        // Min stil was picked last time but has been removed since.
+        if (!b.style) setOptions((o) => (o.captionPreset === 'mine' ? { ...o, captionPreset: 'karaoke' } : o));
+      })
+      .catch(() => undefined);
   }, []);
 
   const set = (patch: Partial<JobOptions>) => {
@@ -165,7 +186,7 @@ export function UploadForm() {
   const summary = [
     `${clipLength(options.clipLength).label === 'Auto' ? 'Auto längd' : clipLength(options.clipLength).hint}`,
     options.aspect,
-    captionPreset(options.captionPreset).label,
+    options.captionPreset === 'mine' ? 'Min stil' : captionPreset(options.captionPreset).label,
     options.keywords ? 'nyckelord' : null,
     options.visual === 'on' ? 'bildanalys' : options.visual === 'off' ? 'ingen bildanalys' : null,
     from || to ? `${from || '0:00'}-${to || 'slut'}` : null,
@@ -284,6 +305,7 @@ export function UploadForm() {
                 onChange={(id) => set({ captionPreset: id })}
                 fontsReady={fontsReady}
                 columns="grid-cols-2 sm:grid-cols-3"
+                mine={brand?.style ? { style: brand.style, onSelect: () => set({ captionPreset: 'mine' }) } : null}
               />
             </Field>
             <Field label="AI:n tittar på videon">
@@ -339,6 +361,13 @@ export function UploadForm() {
                 Lämna tomt för hela videon. Går fortare och billigare för långa videor.
               </p>
             </Field>
+            <p className="text-xs text-gray-500">
+              Egna typsnitt, logga och YouTube-cookies ställer du in under{' '}
+              <Link href="/settings" className="text-accent-400 hover:text-accent-300">
+                Inställningar
+              </Link>
+              .
+            </p>
           </div>
         )}
       </div>

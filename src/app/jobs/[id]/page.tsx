@@ -30,7 +30,7 @@ interface JobData {
   suggestions?: unknown[];
   error?: string;
   clipCount: number;
-  source: { type: string; originalName?: string; url?: string };
+  source: { type: string; originalName?: string; url?: string; title?: string };
   sourceAvailable?: boolean;
   sourceRetentionDays?: number;
   options?: JobOptions;
@@ -48,7 +48,7 @@ function optionLabels(options?: JobOptions, watched?: boolean): string[] {
     options.topic ? `Om: ${options.topic}` : '',
     options.clipLength === 'auto' ? '' : clipLength(options.clipLength).hint,
     options.aspect,
-    captionPreset(options.captionPreset).label,
+    options.captionPreset === 'mine' ? 'Min stil' : captionPreset(options.captionPreset).label,
     options.keywords ? 'Nyckelord' : '',
     options.range ? `Del ${formatClock(options.range.start)}-${formatClock(options.range.end)}` : '',
   ].filter(Boolean);
@@ -138,7 +138,16 @@ export default function JobPage() {
         &larr; Ny video
       </Link>
 
-      <h1 className={`text-2xl font-bold mt-4 ${labels.length ? 'mb-3' : 'mb-8'}`}>
+      <p className="text-sm text-gray-400 mt-4 truncate">
+        {job.source.type === 'upload' ? (
+          job.source.originalName
+        ) : (
+          <a href={job.source.url} target="_blank" rel="noreferrer" className="hover:text-white">
+            {job.source.title ?? job.source.url}
+          </a>
+        )}
+      </p>
+      <h1 className={`text-2xl font-bold mt-1 ${labels.length ? 'mb-3' : 'mb-8'}`}>
         {isDone
           ? `${clips.length} klipp klara`
           : isError

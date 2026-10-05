@@ -118,6 +118,21 @@ class JobStore {
     this.persist();
   }
 
+  /**
+   * Like appendProgress, but a step with the same `key` as the latest one
+   * replaces it (a download at 10 %, 20 %, ... is one line in the log).
+   */
+  setLiveProgress(id: string, step: JobProgressStep & { key: string }): void {
+    this.load();
+    const existing = this.jobs.get(id);
+    if (!existing) return;
+    const last = existing.progress[existing.progress.length - 1];
+    if (last?.key === step.key) existing.progress[existing.progress.length - 1] = step;
+    else existing.progress.push(step);
+    existing.updatedAt = new Date().toISOString();
+    this.persist();
+  }
+
   delete(id: string): boolean {
     this.load();
     const existed = this.jobs.delete(id);

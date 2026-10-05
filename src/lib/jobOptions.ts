@@ -34,11 +34,14 @@ export function clipLength(id: string): ClipLength {
   return CLIP_LENGTHS.find((l) => l.id === id) ?? CLIP_LENGTHS[0];
 }
 
+/** A caption style, or "mine": the style you saved in the editor (Min stil). */
+export type CaptionStyleChoice = CaptionPresetId | 'mine';
+
 export interface JobOptions {
   clipLength: ClipLengthId;
   /** Format and caption style the clips are rendered with (the editor can change them later). */
   aspect: AspectRatio;
-  captionPreset: CaptionPresetId;
+  captionPreset: CaptionStyleChoice;
   /** Let the AI pick the key words of each clip and show them in the emphasis colour. */
   keywords: boolean;
   /** "Find moments about ...": empty = just the best moments. */
@@ -93,7 +96,11 @@ export function sanitizeJobOptions(raw: unknown): JobOptions {
   return {
     clipLength: pick(raw.clipLength, CLIP_LENGTHS.map((l) => l.id), defaults.clipLength),
     aspect: pick(raw.aspect, ASPECT_RATIOS, defaults.aspect),
-    captionPreset: pick(raw.captionPreset, CAPTION_PRESETS.map((p) => p.id), defaults.captionPreset),
+    captionPreset: pick<CaptionStyleChoice>(
+      raw.captionPreset,
+      [...CAPTION_PRESETS.map((p) => p.id), 'mine'],
+      defaults.captionPreset,
+    ),
     keywords: typeof raw.keywords === 'boolean' ? raw.keywords : defaults.keywords,
     topic: sanitizeTopic(raw.topic),
     range,

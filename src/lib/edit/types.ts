@@ -2,6 +2,8 @@
 // without Node imports, so the browser (live preview) and the server (the
 // real render) share the exact same logic.
 
+import type { CustomFont } from './fonts';
+
 export type AspectRatio = '9:16' | '1:1' | '4:5' | '16:9';
 
 /**
@@ -15,7 +17,8 @@ export type LayoutMode = 'auto' | 'fill' | 'fit' | 'split';
 
 export type CaptionPresetId = 'karaoke' | 'box' | 'pop' | 'word' | 'clean';
 
-export type FontId =
+/** A caption font that comes with the app (see edit/fonts.ts). */
+export type BuiltInFontId =
   | 'montserrat'
   | 'anton'
   | 'bebas'
@@ -24,7 +27,21 @@ export type FontId =
   | 'luckiest'
   | 'bangers'
   | 'titan'
-  | 'marker';
+  | 'marker'
+  | 'inter'
+  | 'rubik'
+  | 'oswald'
+  | 'barlow'
+  | 'nunito'
+  | 'fredoka'
+  | 'lilita'
+  | 'kanit'
+  | 'caveat'
+  | 'pacifico'
+  | 'pixel';
+
+/** A caption font: one that comes with the app, or one you uploaded ("u-" + its id). */
+export type FontId = BuiltInFontId | `u-${string}`;
 
 export interface CaptionSettings {
   enabled: boolean;
@@ -49,6 +66,18 @@ export interface TitleSettings {
   enabled: boolean;
   text: string;
   duration: 'intro' | 'all';
+}
+
+export type LogoCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+/** Your logo on the clip (the image itself is in the brand kit). */
+export interface LogoSettings {
+  enabled: boolean;
+  corner: LogoCorner;
+  /** Width, as a share of the frame's width. */
+  size: number;
+  /** 0.2-1 */
+  opacity: number;
 }
 
 /** Changes to one word of the transcript. */
@@ -88,6 +117,29 @@ export interface ClipEdit {
   /** Split screen: put the person on the right on top. */
   splitSwap: boolean;
   reframe: ReframeKey[];
+  logo: LogoSettings;
+}
+
+/** "Min stil": how your clips look, saved from the editor and used for new clips. */
+export interface BrandStyle {
+  captions: CaptionSettings;
+  title: Pick<TitleSettings, 'enabled' | 'duration'>;
+  logo: LogoSettings;
+  savedAt: string;
+}
+
+/** The logo image in the brand kit. `version` changes when it's replaced. */
+export interface LogoImage {
+  width: number;
+  height: number;
+  version: string;
+}
+
+/** Your brand kit, as the editor, upload form and settings page see it. */
+export interface BrandInfo {
+  fonts: CustomFont[];
+  logo: LogoImage | null;
+  style: BrandStyle | null;
 }
 
 /** One transcript word as the editor sees it. */

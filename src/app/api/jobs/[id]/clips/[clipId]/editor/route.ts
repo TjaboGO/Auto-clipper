@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { brandInfo } from '@/lib/brand';
 import { ensurePreview, readPeaks } from '@/lib/editor';
 import { findEditableClip } from '@/lib/editorRoutes';
 
@@ -8,7 +9,8 @@ type Params = { params: Promise<{ id: string; clipId: string }> };
 
 /**
  * Everything the editor needs for one clip: the words, framing analysis,
- * saved edit and the preview video's state (it's made on first open).
+ * saved edit, the preview video's state (it's made on first open) and your
+ * brand kit (fonts, logo, "Min stil").
  * `?only=preview` returns just the preview state, for polling;
  * `?format=webm` asks for a WebM preview (browsers without H.264).
  */
@@ -39,5 +41,6 @@ export async function GET(req: NextRequest, { params }: Params) {
     data,
     edit,
     preview,
+    brand: brandInfo(),
   });
 }

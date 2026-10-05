@@ -1,10 +1,13 @@
-import { CAPTION_FONTS } from './fonts';
+import { allFonts } from './fonts';
 import type {
   AspectRatio,
+  BrandStyle,
   CaptionPresetId,
   CaptionSettings,
   ClipEdit,
   LayoutMode,
+  LogoCorner,
+  LogoSettings,
   ReframeKey,
   TimeRange,
   WordOverride,
@@ -76,6 +79,8 @@ export function presetCaptions(id: CaptionPresetId, keep?: Partial<CaptionSettin
 }
 
 export const ASPECT_RATIOS: AspectRatio[] = ['9:16', '1:1', '4:5', '16:9'];
+export const LOGO_CORNERS: LogoCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+export const DEFAULT_LOGO: LogoSettings = { enabled: false, corner: 'top-right', size: 0.16, opacity: 1 };
 export const LAYOUT_MODES: LayoutMode[] = ['auto', 'fill', 'fit', 'split'];
 
 /** How the pipeline renders a fresh clip: no cuts, auto framing, the job's format and caption style. */
@@ -100,6 +105,7 @@ export function defaultEdit(opts: {
     layout: 'auto',
     splitSwap: false,
     reframe: [],
+    logo: { ...DEFAULT_LOGO },
   };
 }
 
@@ -138,7 +144,7 @@ function sanitizeCaptions(raw: unknown, fallback: CaptionSettings): CaptionSetti
   return {
     enabled: bool(raw.enabled, fallback.enabled),
     preset,
-    font: oneOf(raw.font, CAPTION_FONTS.map((f) => f.id), fallback.font),
+    font: oneOf(raw.font, allFonts().map((f) => f.id), fallback.font),
     size: num(raw.size, 0.5, 2, fallback.size),
     position: raw.position === null ? null : num(raw.position, 0.05, 0.95, fallback.position ?? 0.72),
     textColor: color(raw.textColor, fallback.textColor),
@@ -146,6 +152,47 @@ function sanitizeCaptions(raw: unknown, fallback: CaptionSettings): CaptionSetti
     emphasisColor: color(raw.emphasisColor, fallback.emphasisColor),
     uppercase: bool(raw.uppercase, fallback.uppercase),
     maxWords: Math.round(num(raw.maxWords, 1, 8, fallback.maxWords)),
+  };
+}
+
+export function sanitizeLogo(raw: unknown, fallback: LogoSettings): LogoSettings {
+  if (!isObject(raw)) return fallback;
+  return {
+    enabled: bool(raw.enabled, fallback.enabled),
+    corner: oneOf(raw.corner, LOGO_CORNERS, fallback.corner),
+    size: num(raw.size, 0.06, 0.4, fallback.size),
+    opacity: num(raw.opacity, 0.2, 1, fallback.opacity),
+  };
+}
+
+/** An edit saved before a setting existed gets that setting's default. */
+export function upgradeEdit(edit: ClipEdit): ClipEdit {
+  return { ...edit, logo: sanitizeLogo(edit.logo, DEFAULT_LOGO) };
+}
+
+/** The clip with "Min stil" on it: text, title and logo (a logo only if there is one). */
+export function withStyle(edit: ClipEdit, style: BrandStyle, hasLogo: boolean): ClipEdit {
+  return {
+    ...edit,
+    captions: { ...style.captions },
+    title: { ...edit.title, enabled: style.title.enabled, duration: style.title.duration },
+    logo: { ...style.logo, enabled: style.logo.enabled && hasLogo },
+  };
+}
+
+/** Clean up "Min stil" as sent from the editor. Null if it isn't one. */
+export function sanitizeStyle(raw: unknown): BrandStyle | null {
+  if (!isObject(raw) || !isObject(raw.captions)) return null;
+  const captions = sanitizeCaptions(raw.captions, presetCaptions('karaoke'));
+  const rawTitle = isObject(raw.title) ? raw.title : {};
+  return {
+    captions,
+    title: {
+      enabled: bool(rawTitle.enabled, false),
+      duration: oneOf(rawTitle.duration, ['intro', 'all'] as const, 'intro'),
+    },
+    logo: sanitizeLogo(raw.logo, DEFAULT_LOGO),
+    savedAt: new Date().toISOString(),
   };
 }
 
@@ -216,5 +263,6 @@ export function sanitizeEdit(
     layout: oneOf(raw.layout, LAYOUT_MODES, fallback.layout),
     splitSwap: bool(raw.splitSwap, fallback.splitSwap),
     reframe,
+    logo: sanitizeLogo(raw.logo, fallback.logo ?? DEFAULT_LOGO),
   };
 }

@@ -100,3 +100,11 @@ test('no audio track: video only', () => {
   const { maps } = buildRenderGraph(input({ hasAudio: false, kept: [{ start: 0, end: 2 }, { start: 3, end: 5 }] }));
   assert.deepEqual(maps, ['-map', '[vout]']);
 });
+
+test('a logo goes on top of the picture, under the captions', () => {
+  const { graph } = buildRenderGraph(input({ logo: { rect: { x: 850, y: 43, w: 187, h: 94 }, opacity: 0.8 } }));
+  assert.match(graph, /\[base\];\[1:v\]scale=187:94,format=rgba,colorchannelmixer=aa=0\.8\[logo\];/);
+  assert.match(graph, /\[base\]\[logo\]overlay=850:43,ass=filename='clip\.ass'\[vout\]/);
+  // Without a logo the graph doesn't mention a second input.
+  assert.doesNotMatch(buildRenderGraph(input({})).graph, /1:v/);
+});

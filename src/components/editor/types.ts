@@ -1,4 +1,4 @@
-import type { ClipEdit, ClipEditorData } from '@/lib/edit/types';
+import type { BrandInfo, ClipEdit, ClipEditorData } from '@/lib/edit/types';
 import type { RenderedClip } from '@/lib/types';
 
 export interface PreviewInfo {
@@ -16,4 +16,5 @@ export interface EditorPayload {
   data: ClipEditorData;
   edit: ClipEdit;
   preview: PreviewInfo;
+  brand: BrandInfo;
 }

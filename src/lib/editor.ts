@@ -10,6 +10,7 @@ import { Queue, renderQueue } from './queue';
 import { renderClipEdit } from './render';
 import { analyzeFraming } from './smartCrop';
 import { clipWords, endAfterWord, startBeforeWord } from './edit/timeline';
+import { upgradeEdit } from './edit/presets';
 import { needsFramingAnalysis } from './editorWords';
 import { timeWords } from './wordTiming';
 import type { ClipEdit, ClipEditorData, TimeRange } from './edit/types';
@@ -48,7 +49,8 @@ export function writeEditorData(jobId: string, clipId: string, data: ClipEditorD
 }
 
 export function readClipEdit(jobId: string, clipId: string): ClipEdit | null {
-  return readJson<ClipEdit>(editorFile(jobId, clipId, 'edit.json'));
+  const edit = readJson<ClipEdit>(editorFile(jobId, clipId, 'edit.json'));
+  return edit && upgradeEdit(edit);
 }
 
 export function writeClipEdit(jobId: string, clipId: string, edit: ClipEdit): void {

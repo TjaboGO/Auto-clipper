@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fitRect, resolveLayout, singleCrop, splitCrop } from './layout';
+import { fitRect, logoRect, resolveLayout, singleCrop, splitCrop } from './layout';
 import type { FramingAnalysis } from './types';
 
 const wide = { width: 1920, height: 1080, duration: 60, hasAudio: true };
@@ -37,4 +37,18 @@ test('crop boxes: sideways for a wide source, a fixed band for a narrow one', ()
 
 test('fit centers the whole frame', () => {
   assert.deepEqual(fitRect(wide, { w: 1080, h: 1920 }), { x: 0, y: 657, w: 1080, h: 606 });
+});
+
+test('the logo sits in its corner, sized by the frame width, a tall one kept in check', () => {
+  const out = { w: 1080, h: 1920 };
+  const wideLogo = { width: 400, height: 200 };
+  const logo = { enabled: true, corner: 'top-right' as const, size: 0.2, opacity: 1 };
+  // 20 % of 1080 = 216 wide, margin 4 % of 1080 = 43.
+  assert.deepEqual(logoRect(out, wideLogo, logo), { x: 1080 - 216 - 43, y: 43, w: 216, h: 108 });
+  assert.deepEqual(logoRect(out, wideLogo, { ...logo, corner: 'bottom-left' }), { x: 43, y: 1920 - 108 - 43, w: 216, h: 108 });
+  // A very tall logo is held to a quarter of the height.
+  const tallLogo = { width: 100, height: 1000 };
+  const rect = logoRect(out, tallLogo, { ...logo, size: 0.4 });
+  assert.equal(rect.h, 480);
+  assert.equal(rect.w, 48);
 });

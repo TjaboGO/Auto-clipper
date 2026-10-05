@@ -1,9 +1,13 @@
+import Link from 'next/link';
 import { UploadForm } from '@/components/UploadForm';
 import { RecentJobs } from '@/components/RecentJobs';
 
 export default function HomePage() {
   return (
-    <main className="flex flex-col items-center px-4 py-16 md:py-24">
+    <main className="relative flex flex-col items-center px-4 py-16 md:py-24">
+      <Link href="/settings" className="absolute top-4 right-4 text-sm text-gray-400 hover:text-white">
+        Inställningar
+      </Link>
       <div className="text-center mb-12 max-w-2xl">
         <h1 className="text-3xl md:text-5xl font-bold mb-4 tracking-tight">
           Auto <span className="text-accent-400">Clipper</span>

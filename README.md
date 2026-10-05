@@ -25,6 +25,10 @@ och appen:
    klipp bort ord i texten, ta bort utfyllnadsord och pauser, dra i start och slut, rätta
    stavning, byt textstil, typsnitt, format och layout, beskär själv och lägg till en rubrik.
    Sen renderar du om klippet med ett klick
+9. Har ett eget varumärkespaket: 20 inbyggda typsnitt plus dina egna (ladda upp .ttf/.otf), din
+   logga i ett hörn, och "Min stil" som sparar hur dina klipp ska se ut och används för nya jobb
+10. Hämtar YouTube-videor även när YouTube vill att man är inloggad, med cookies från ditt konto,
+    och visar hur långt nedladdningen har kommit
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -67,8 +71,13 @@ I Coolify: peka på det här repot, sätt `GEMINI_API_KEY` som miljövariabel, o
 redigeraren) i `SOURCE_RETENTION_DAYS` dagar, så räkna med plats för dem.
 
 **Viktigt:** appen har ingen inloggning. Alla som hittar adressen kan starta jobb på din
-Gemini-nyckel och din server. Lägg den bakom något skydd om den ligger publikt, till exempel
-Basic Auth i Coolify.
+Gemini-nyckel och din server, och ladda ner videor med dina YouTube-cookies om du har sparat
+några. Lägg den bakom något skydd om den ligger publikt, till exempel Basic Auth i Coolify.
+
+**YouTube från en server:** YouTube stoppar ofta nedladdningar från datacenter ("Sign in to
+confirm you're not a bot"). Gå då till Inställningar i appen och klistra in en `cookies.txt` från
+en webbläsare där du är inloggad på YouTube (till exempel med tillägget "Get cookies.txt
+LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDLP_COOKIES` på en fil.
 
 ## Hur det funkar under huven
 
@@ -105,8 +114,16 @@ Basic Auth i Coolify.
   inåt, så uppbyggnaden före ett mål och jublet efter blir kvar.
 - `src/lib/captions.ts` - bygger en `.ass`-undertextfil per klipp i vald stil: Karaoke (ordet som
   sägs lyser), Box (färgad ruta bakom ordet), Pop (ordet växer), Ord för ord och Enkel, plus
-  rubriken överst. Nio fria typsnitt (SIL OFL och Apache 2.0, licenserna ligger i
-  `assets/fonts/licenses`) så texterna ser likadana ut på alla maskiner.
+  rubriken överst. 20 fria typsnitt (SIL OFL och Apache 2.0, licenserna ligger i
+  `assets/fonts/licenses`) så texterna ser likadana ut på alla maskiner. Varje typsnitt har mått
+  för storlek och bredd, så ett brett typsnitt får färre bokstäver per rad.
+- `src/lib/brand.ts` + `src/lib/fontFile.ts` - varumärkespaketet i `storage/brand`: dina
+  typsnitt, din logga och Min stil. Uppladdade typsnitt läses direkt i TypeScript (namn, radhöjd,
+  versalhöjd, bokstavsbredd och om å, ä och ö finns), så de får samma mått som de inbyggda. Vid
+  rendering får libass en mapp med bara ditt typsnitt, så inget inbyggt med samma namn kan ta
+  över. Loggan sparas som PNG (högst 800 px) och läggs på i ffmpeg under texterna, på samma
+  plats som i förhandsvisningen.
+- `src/app/settings` - inställningssidan: Min stil, egna typsnitt, logga och YouTube-cookies.
 - `src/lib/render.ts` + `src/lib/renderGraph.ts` - renderar ett klipp i ett enda ffmpeg-kommando:
   beskärning (följ talaren, split screen, eller hela bilden med suddig bakgrund) i valt format
   (9:16, 1:1, 4:5, 16:9), bortklippta ord och pauser (bilden väljs ut och flyttas ihop, ljudet
@@ -129,7 +146,10 @@ Basic Auth i Coolify.
   transkribering (och det den sett i bild) jobbet redan har, kan låta Gemini titta på videon först,
   undviker det som redan är klipp och lägger till de nya klippen i samma jobb.
 - `src/lib/youtube.ts` - hämtar videon med `yt-dlp` om du klistrar in en länk istället för att
-  ladda upp en fil.
+  ladda upp en fil. Använder dina sparade cookies (en kopia per jobb, eftersom yt-dlp skriver i
+  filen), visar procent under nedladdningen och sparar videons titel. Vanliga fel (logga in,
+  åldersgräns, privat, borttagen, livesändning, för många förfrågningar) blir begripliga
+  meddelanden som säger vad du kan göra.
 - Jobb körs i en enkel kö i minnet (`src/lib/queue.ts`) och sparas till `storage/jobs.json`, så
   historiken överlever en omstart. Jobb som var igång när servern startades om markeras som
   avbrutna. Inget behov av en separat databas för ett projekt som det här.
@@ -141,9 +161,9 @@ Basic Auth i Coolify.
 - `POST /api/jobs` med JSON `{ "youtubeUrl": "https://...", "clipCount": 6 }` för en länk.
 - Båda tar valfritt `options` (JSON, som query-parameter vid uppladdning):
   `{ "clipLength": "auto|short|medium|long|xlong", "aspect": "9:16|1:1|4:5|16:9",
-  "captionPreset": "karaoke|box|pop|word|clean", "keywords": true, "topic": "pengar",
+  "captionPreset": "karaoke|box|pop|word|clean|mine", "keywords": true, "topic": "pengar",
   "range": { "start": 60, "end": 600 }, "visual": "auto|on|off" }`. `visual` styr om Gemini
-  tittar på bilden: när det är lite prat (`auto`), alltid, eller aldrig.
+  tittar på bilden: när det är lite prat (`auto`), alltid, eller aldrig. `mine` är Min stil.
 - `POST /api/jobs/<id>/search` med `{ "topic": "...", "clipCount": 3, "clipLength": "short",
   "watch": true }` hittar fler klipp i ett klart jobb. `watch` låter Gemini titta på videon först,
   om den inte redan gjort det.
@@ -151,6 +171,11 @@ Basic Auth i Coolify.
   `DELETE /api/jobs/<id>` tar bort ett jobb med alla filer.
 - Redigeraren: `GET /api/jobs/<id>/clips/<clipId>/editor` (ord, analys, redigering, förhandsvideo),
   `PUT .../edit` sparar en redigering, `POST .../render` renderar om klippet.
+- Varumärke: `GET /api/brand`, `POST /api/brand/fonts?filename=...` (filen som body),
+  `DELETE /api/brand/fonts/<id>`, `POST`/`DELETE /api/brand/logo` (bilden som body, `GET` visar
+  den), `PUT`/`DELETE /api/brand/style` (Min stil).
+- YouTube-cookies: `GET` (bara status, aldrig innehållet), `PUT` (cookies.txt som body) och
+  `DELETE /api/youtube-cookies`.
 
 ## Kända begränsningar (värt att veta)
 
@@ -175,9 +200,15 @@ Basic Auth i Coolify.
 - **Rörelseföljningen är enkel.** Den följer där det rör sig mest, så i en bild med rörelse
   överallt (publik, konfetti, snabba kameraåkningar) kan den välja fel. Då kan du beskära själv i
   redigeraren.
-- **Redigeraren har inte allt som Opus har.** Det finns ingen B-roll, musik, emojis, logotyp,
+- **Redigeraren har inte allt som Opus har.** Det finns ingen B-roll, musik, emojis,
   övergångar eller publicering direkt till TikTok och YouTube. Split screen-halvorna följer
-  personerna automatiskt och kan bara byta plats, inte beskäras för hand.
+  personerna automatiskt och kan bara byta plats, inte beskäras för hand. Loggan är en stillbild.
+- **Egna typsnitt:** bara .ttf och .otf (inte WOFF eller samlingar). Typsnitt med väldigt hög
+  radhöjd ger en hög ruta i Box-stilen, så som libass ritar den (förhandsvisningen visar samma
+  sak). Använd bara typsnitt du har rätt att använda i video.
+- **YouTube-nedladdningen är inte provad mot riktiga YouTube här.** Den är testad med en lokal
+  testserver (förlopp, titel, cookies och fel), men YouTube ändrar sig ofta. Håll `yt-dlp`
+  uppdaterad (bygg om Docker-bilden) om nedladdningar börjar faila.
 - **En kö-arbetare i taget som standard** (`QUEUE_CONCURRENCY=1`). Höj den om servern har gott om
   CPU, men ffmpeg + ansiktsdetektering är tungt - testa dig fram.
 - **Ingen inloggning eller multi-user-stöd.** Det här är byggt som ett personligt verktyg, inte en
@@ -190,7 +221,9 @@ Basic Auth i Coolify.
 Se `.env.example`. Den viktiga är `GEMINI_API_KEY`. `GEMINI_MODEL` är `gemini-3.5-flash` som
 standard. Google pensionerar gamla modeller med jämna mellanrum, så byt till en aktuell om jobben
 börjar faila med att modellen inte hittas. `WORD_TIMING` och `WHISPER_MODEL` styr ordtimingen, och
-`SOURCE_RETENTION_DAYS` hur länge källvideon sparas för redigeraren.
+`SOURCE_RETENTION_DAYS` hur länge källvideon sparas för redigeraren. `YTDLP_COOKIES` kan peka på en
+egen cookies.txt för YouTube (annars sparas cookies från inställningssidan i
+`storage/youtube-cookies.txt`).
 
 ## Tech stack
 
@@ -209,3 +242,8 @@ ordtiming, `yt-dlp` för YouTube-nedladdning.
    nyckelord i texten, del av videon, och "hitta fler klipp" i efterhand~~ (klar)
 5. ~~Låta Gemini titta på videon, så det funkar även för innehåll utan prat, och följa rörelsen
    när det inte finns några ansikten~~ (klar)
+6. ~~YouTube-cookies, begripliga fel och nedladdningsförlopp. Fler typsnitt, egna typsnitt, logga
+   och Min stil~~ (klar)
+7. Fler layouter: spel med facecam ovanpå varandra, skärmdelning med ansikte, och 3-4 personer.
+   Välja AI-modell per steg (en billig för transkribering, den bästa för klippvalet) och byta
+   standardmodell till en nyare Gemini Flash. OpenRouter som valfri leverantör för klippvalet.

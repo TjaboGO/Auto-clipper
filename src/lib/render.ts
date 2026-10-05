@@ -2,9 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import { config } from './config';
 import { run } from './exec';
+import { brandInfo, customFontPath, logoFile } from './brand';
 import { buildClipAss, escapeFfmpegFilterPath } from './captions';
 import { buildRenderGraph } from './renderGraph';
-import { OUTPUT_SIZES, resolveLayout, type ResolvedLayout } from './edit/layout';
+import { captionFont, isCustomFontId } from './edit/fonts';
+import { logoRect, OUTPUT_SIZES, resolveLayout, type ResolvedLayout } from './edit/layout';
 import {
   applyReframe,
   keptRanges,
@@ -40,6 +42,8 @@ export async function renderClipEdit(opts: {
   name: string;
 }): Promise<RenderResult> {
   const { sourcePath, data, edit, outPath, workDir, name } = opts;
+  // Loads the brand kit, which also makes your own fonts known to the caption code.
+  const brand = brandInfo();
   const out = OUTPUT_SIZES[edit.aspect];
   const { layout, note } = resolveLayout(edit.layout, edit.aspect, data.source, data.analysis);
   const kept = keptRanges(edit, data.words);
@@ -78,6 +82,17 @@ export async function renderClipEdit(opts: {
       : { top: onClip(top), bottom: onClip(bottom) };
   }
 
+  // One of your fonts: libass gets a folder with just that font, so no
+  // font that comes with the app can have the same name.
+  let fontsDir = config.fontsDir;
+  const customFile = isCustomFontId(edit.captions.font) ? customFontPath(captionFont(edit.captions.font).file) : null;
+  if (customFile) {
+    fontsDir = path.join(/* turbopackIgnore: true */ workDir, `${name}-fonts`);
+    fs.mkdirSync(fontsDir, { recursive: true });
+    fs.copyFileSync(customFile, path.join(/* turbopackIgnore: true */ fontsDir, path.basename(customFile)));
+  }
+  const logo = edit.logo.enabled && brand.logo ? { rect: logoRect(out, brand.logo, edit.logo), opacity: edit.logo.opacity } : undefined;
+
   const { graph, maps } = buildRenderGraph({
     source: data.source,
     out,
@@ -89,7 +104,8 @@ export async function renderClipEdit(opts: {
     hasAudio: data.source.hasAudio,
     captionsFilter:
       `ass=filename='${escapeFfmpegFilterPath(assPath)}'` +
-      `:fontsdir='${escapeFfmpegFilterPath(config.fontsDir)}'`,
+      `:fontsdir='${escapeFfmpegFilterPath(fontsDir)}'`,
+    logo,
   });
   // A clip with many cuts has a long graph: pass it as a file, not an argument.
   const graphPath = path.join(workDir, `${name}.filtergraph`);
@@ -103,6 +119,7 @@ export async function renderClipEdit(opts: {
       '-ss', String(edit.start),
       '-t', String(Math.max(0.2, length)),
       '-i', sourcePath,
+      ...(logo ? ['-i', logoFile()] : []),
       '-filter_complex_script', graphPath,
       ...maps,
       '-c:v', 'libx264',

@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { ClipEditor } from '@/components/editor/ClipEditor';
 import type { EditorPayload } from '@/components/editor/types';
 import { previewFormat } from '@/components/editor/previewFormat';
+import { setCustomFonts } from '@/lib/edit/fonts';
 
 export default function ClipEditorPage() {
   const { id, clipId } = useParams<{ id: string; clipId: string }>();
@@ -20,8 +21,13 @@ export default function ClipEditorPage() {
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
         if (cancelled) return;
-        if (!res.ok) setError(body.error ?? 'Kunde inte öppna klippet.');
-        else setPayload(body as EditorPayload);
+        if (!res.ok) {
+          setError(body.error ?? 'Kunde inte öppna klippet.');
+          return;
+        }
+        // Your own fonts, so the preview can find the one the clip uses.
+        setCustomFonts((body as EditorPayload).brand?.fonts ?? []);
+        setPayload(body as EditorPayload);
       })
       .catch(() => !cancelled && setError('Kunde inte nå servern.'));
     return () => {

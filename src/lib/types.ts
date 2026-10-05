@@ -72,11 +72,14 @@ export interface JobProgressStep {
   step: JobStatus;
   message: string;
   at: string; // ISO timestamp
+  /** A step that is updated in place while it's the latest one (download progress). */
+  key?: string;
 }
 
 export type JobSource =
   | { type: 'upload'; originalName: string }
-  | { type: 'youtube'; url: string };
+  /** `title`: the video's own title, once it's downloaded. */
+  | { type: 'youtube'; url: string; title?: string };
 
 export interface Job {
   id: string;

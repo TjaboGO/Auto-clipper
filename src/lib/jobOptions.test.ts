@@ -35,3 +35,8 @@ test('times are read and written as m:ss', () => {
   assert.equal(formatClock(750), '12:30');
   assert.equal(formatClock(3725), '1:02:05');
 });
+
+test('Min stil can be picked as the caption style', () => {
+  assert.equal(sanitizeJobOptions({ captionPreset: 'mine' }).captionPreset, 'mine');
+  assert.equal(sanitizeJobOptions({ captionPreset: 'theirs' }).captionPreset, 'karaoke');
+});

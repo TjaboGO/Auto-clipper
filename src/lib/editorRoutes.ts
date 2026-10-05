@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { brandInfo } from './brand';
 import { clipEditable, readClipEdit, readEditorData } from './editor';
 import { jobStore } from './jobStore';
 import { isSafeSegment } from './paths';
@@ -17,6 +18,8 @@ export function findEditableClip(jobId: string, clipId: string): EditableClip | 
   if (!isSafeSegment(jobId) || !isSafeSegment(clipId)) {
     return NextResponse.json({ error: 'Ogiltigt id.' }, { status: 400 });
   }
+  // Your own fonts must be known before an edit that uses one is checked.
+  brandInfo();
   const job = jobStore.get(jobId);
   const clip = job?.clips?.find((c) => c.id === clipId);
   if (!job || !clip) {

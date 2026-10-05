@@ -8,12 +8,14 @@ export interface ExecResult {
 /**
  * Run a command to completion, rejecting on non-zero exit. With `timeoutMs`
  * the command is killed (and the promise rejected) if it runs longer.
+ * `onLine` gets each line of stdout as it comes (for progress).
  */
 export function run(
   cmd: string,
   args: string[],
   options: SpawnOptionsWithoutStdio = {},
   timeoutMs?: number,
+  onLine?: (line: string) => void,
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, options);
@@ -26,7 +28,15 @@ export function run(
           child.kill('SIGKILL');
         }, timeoutMs)
       : undefined;
-    child.stdout?.on('data', (d) => (stdout += d.toString()));
+    let pending = '';
+    child.stdout?.on('data', (d) => {
+      const text = d.toString();
+      stdout += text;
+      if (!onLine) return;
+      const lines = (pending + text).split(/\r?\n/);
+      pending = lines.pop() ?? '';
+      for (const line of lines) onLine(line);
+    });
     child.stderr?.on('data', (d) => (stderr += d.toString()));
     child.on('error', (err) => {
       clearTimeout(timer);

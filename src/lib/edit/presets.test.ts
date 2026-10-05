@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultEdit, presetCaptions, sanitizeEdit } from './presets';
+import { DEFAULT_LOGO, defaultEdit, presetCaptions, sanitizeEdit, sanitizeStyle, upgradeEdit, withStyle } from './presets';
+import type { ClipEdit } from './types';
 
 const fallback = defaultEdit({ start: 40, end: 70, title: 'Rubrik' });
 const ctx = { window: { start: 10, end: 100 }, wordIds: new Set(['0:0', '0:1', '1:0']), fallback };
@@ -52,4 +53,32 @@ test('a clip too short to render keeps its old edges', () => {
   const edit = sanitizeEdit({ ...fallback, start: 50, end: 50.5 }, ctx);
   assert.equal(edit.start, 40);
   assert.equal(edit.end, 70);
+});
+
+test('logo settings are checked, and old edits without them get the default', () => {
+  const edit = sanitizeEdit({ ...fallback, logo: { enabled: true, corner: 'middle', size: 9, opacity: 0 } }, ctx);
+  assert.deepEqual(edit.logo, { enabled: true, corner: 'top-right', size: 0.4, opacity: 0.2 });
+  const { logo: _logo, ...old } = fallback;
+  assert.deepEqual(upgradeEdit(old as ClipEdit).logo, DEFAULT_LOGO);
+});
+
+test('Min stil: checked when saved, put on a clip with the logo only if there is one', () => {
+  assert.equal(sanitizeStyle({ title: {} }), null);
+  const style = sanitizeStyle({
+    captions: { ...presetCaptions('pop'), font: 'oswald', textColor: '#00ff00', size: 7 },
+    title: { enabled: true, duration: 'all' },
+    logo: { enabled: true, corner: 'bottom-left', size: 0.2, opacity: 0.5 },
+  });
+  assert.ok(style);
+  assert.equal(style.captions.font, 'oswald');
+  assert.equal(style.captions.textColor, '#00FF00');
+  assert.equal(style.captions.size, 2);
+  const styled = withStyle(fallback, style, true);
+  assert.equal(styled.captions.preset, 'pop');
+  assert.deepEqual(styled.title, { enabled: true, text: 'Rubrik', duration: 'all' });
+  assert.equal(styled.logo.corner, 'bottom-left');
+  assert.equal(styled.logo.enabled, true);
+  assert.equal(withStyle(fallback, style, false).logo.enabled, false);
+  // A font that isn't known (deleted) falls back to the default.
+  assert.equal(sanitizeStyle({ captions: { ...style.captions, font: 'u-gone' } })?.captions.font, 'montserrat');
 });

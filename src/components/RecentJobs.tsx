@@ -7,7 +7,7 @@ interface JobSummary {
   id: string;
   status: string;
   createdAt: string;
-  source: { type: string; originalName?: string; url?: string };
+  source: { type: string; originalName?: string; url?: string; title?: string };
   clipsReady: number;
 }
 
@@ -46,7 +46,7 @@ export function RecentJobs() {
             >
               <div className="min-w-0">
                 <p className="text-sm truncate">
-                  {job.source.type === 'upload' ? job.source.originalName : job.source.url}
+                  {job.source.type === 'upload' ? job.source.originalName : (job.source.title ?? job.source.url)}
                 </p>
                 <p className="text-xs text-gray-500">
                   {new Date(job.createdAt).toLocaleString('sv-SE', {
