@@ -1,0 +1,22 @@
+# dependencies and build output (rebuilt inside the image)
+node_modules
+.next
+*.tsbuildinfo
+next-env.d.ts
+
+# runtime data - lives in the /app/storage volume, never in the image
+storage/uploads/*
+storage/work/*
+storage/output/*
+storage/sources
+storage/editor
+storage/models
+storage/jobs.json*
+
+# secrets and local clutter
+.env
+.env*.local
+.git
+.DS_Store
+npm-debug.log*
+__pycache__
