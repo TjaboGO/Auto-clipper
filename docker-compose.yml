@@ -1,0 +1,28 @@
+services:
+  auto-clipper:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - APP_PASSWORD=${APP_PASSWORD:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash}
+      - GEMINI_TRANSCRIBE_MODEL=${GEMINI_TRANSCRIBE_MODEL:-}
+      - GEMINI_VISION_MODEL=${GEMINI_VISION_MODEL:-}
+      - GEMINI_HIGHLIGHT_MODEL=${GEMINI_HIGHLIGHT_MODEL:-}
+      - HIGHLIGHT_PROVIDER=${HIGHLIGHT_PROVIDER:-gemini}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-google/gemini-3.8-flash}
+      - DEFAULT_CLIP_COUNT=${DEFAULT_CLIP_COUNT:-6}
+      - QUEUE_CONCURRENCY=${QUEUE_CONCURRENCY:-1}
+      - WORD_TIMING=${WORD_TIMING:-on}
+      - WHISPER_MODEL=${WHISPER_MODEL:-small}
+      - SOURCE_RETENTION_DAYS=${SOURCE_RETENTION_DAYS:-7}
+      - YTDLP_COOKIES=${YTDLP_COOKIES:-}
+      - STORAGE_DIR=/app/storage
+    volumes:
+      - auto-clipper-storage:/app/storage
+    restart: unless-stopped
+
+volumes:
+  auto-clipper-storage:
