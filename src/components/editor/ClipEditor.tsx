@@ -6,6 +6,7 @@ import { captionMetrics, captionPages, titleMetrics } from '@/lib/edit/captionLa
 import { defaultCaptionPosition, framePanels, OUTPUT_SIZES, resolveLayout, singleCrop } from '@/lib/edit/layout';
 import { MIN_CLIP_SECONDS } from '@/lib/edit/presets';
 import { CAPTION_FONTS, setCustomFonts } from '@/lib/edit/fonts';
+import { sentencesToTranslate } from '@/lib/edit/translation';
 import {
   applyReframe,
   clipWords,
@@ -13,7 +14,7 @@ import {
   endAfterWord,
   keptRanges,
   outputDuration,
-  outputWords,
+  captionWords,
   removedWordIds,
   startBeforeWord,
   toOutputTime,
@@ -100,7 +101,7 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
   const cuts = useMemo(() => computeCuts(edit, words), [edit, words]);
   const kept = useMemo(() => keptRanges(edit, words), [edit, words]);
   const duration = outputDuration(kept);
-  const outWords = useMemo(() => outputWords(edit, words, kept), [edit, words, kept]);
+  const outWords = useMemo(() => captionWords(edit, words, kept), [edit, words, kept]);
   const panels = useMemo(
     () =>
       framePanels({
@@ -314,6 +315,24 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
     previewRef.current?.seek(toSourceTime(kept, Math.max(0, Math.min(duration, o + delta))));
   };
 
+  const sentences = useMemo(
+    () => sentencesToTranslate(words, { start: edit.start, end: edit.end, words: edit.words }),
+    [words, edit.start, edit.end, edit.words],
+  );
+  const translate = useCallback(
+    async (lang: string) => {
+      const res = await fetch(`/api/jobs/${jobId}/clips/${clip.id}/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lang, edit: editRef.current }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? 'Kunde inte översätta texten.');
+      set({ ...editRef.current, translation: body.translation });
+    },
+    [jobId, clip.id, set],
+  );
+
   const onReframe = (t: number, cx: number) => {
     const reframe = [...edit.reframe.filter((k) => Math.abs(k.t - t) > 0.05), { t, cx }].sort((a, b) => a.t - b.t);
     set({ ...edit, reframe });
@@ -419,6 +438,13 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             Ladda ner nya versionen
           </a>
         )}
+        <a
+          href={`/api/jobs/${jobId}/clips/${clip.id}/subtitles?format=srt`}
+          className="text-sm text-gray-400 hover:text-white"
+          title="Undertexter (.srt) för den senast renderade versionen"
+        >
+          SRT
+        </a>
         <button
           type="button"
           onClick={startRender}
@@ -536,6 +562,8 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             fontsReady={fontsReady}
             brand={brand}
             onBrand={updateBrand}
+            sentences={sentences}
+            onTranslate={translate}
           />
         </aside>
       </div>

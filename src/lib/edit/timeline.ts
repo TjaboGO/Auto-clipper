@@ -1,4 +1,5 @@
 import type { ClipEdit, CropKeyframe, EditorWord, ReframeKey, TimeRange } from './types';
+import { translatedWords } from './translation';
 
 // Silence kept on each side of a stretch of removed words, so the speech
 // around a cut still has room to breathe ...
@@ -168,6 +169,11 @@ export function outputWords(edit: ClipEdit, words: EditorWord[], kept: TimeRange
     out.push({ id: w.id, text, start, end, seg: w.seg, emphasis: override?.emphasis === true });
   }
   return out;
+}
+
+/** The words the captions show, in the translation if the clip has one. */
+export function captionWords(edit: ClipEdit, words: EditorWord[], kept: TimeRange[]): OutputWord[] {
+  return translatedWords(outputWords(edit, words, kept), edit.translation ?? null);
 }
 
 /** Clip start just before word `index`: a little lead-in, not reaching into the word before. */

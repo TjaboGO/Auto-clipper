@@ -1,9 +1,11 @@
 import { allFonts } from './fonts';
 import { PANEL_SIZE_RANGE } from './layout';
+import { captionLanguage } from './translation';
 import type {
   AspectRatio,
   BrandStyle,
   CaptionPresetId,
+  CaptionTranslation,
   CaptionSettings,
   ClipEdit,
   LayoutMode,
@@ -108,6 +110,7 @@ export function defaultEdit(opts: {
     panelSize: null,
     reframe: [],
     logo: { ...DEFAULT_LOGO },
+    translation: null,
   };
 }
 
@@ -169,7 +172,30 @@ export function sanitizeLogo(raw: unknown, fallback: LogoSettings): LogoSettings
 
 /** An edit saved before a setting existed gets that setting's default. */
 export function upgradeEdit(edit: ClipEdit): ClipEdit {
-  return { ...edit, logo: sanitizeLogo(edit.logo, DEFAULT_LOGO), panelSize: panelSize(edit.panelSize, null) };
+  return {
+    ...edit,
+    logo: sanitizeLogo(edit.logo, DEFAULT_LOGO),
+    panelSize: panelSize(edit.panelSize, null),
+    translation: sanitizeTranslation(edit.translation, null),
+  };
+}
+
+const MAX_TRANSLATED_SEGMENTS = 400;
+const MAX_TRANSLATED_TEXT = 600;
+
+/** Translated captions as sent from the editor: a known language and text per sentence index. */
+export function sanitizeTranslation(value: unknown, fallback: CaptionTranslation | null): CaptionTranslation | null {
+  if (value === null) return null;
+  if (!isObject(value) || !captionLanguage(typeof value.lang === 'string' ? value.lang : null) || !isObject(value.segments)) {
+    return fallback;
+  }
+  const segments: Record<string, string> = {};
+  for (const [key, text] of Object.entries(value.segments).slice(0, MAX_TRANSLATED_SEGMENTS)) {
+    if (/^\d+$/.test(key) && typeof text === 'string' && text.trim()) {
+      segments[key] = text.replace(/[\r\n\t]+/g, ' ').trim().slice(0, MAX_TRANSLATED_TEXT);
+    }
+  }
+  return { lang: value.lang as string, segments };
 }
 
 /** Facecam / screen: the camera's or screen's share of the height, or null = automatic. */
@@ -275,5 +301,6 @@ export function sanitizeEdit(
     panelSize: panelSize(raw.panelSize, fallback.panelSize ?? null),
     reframe,
     logo: sanitizeLogo(raw.logo, fallback.logo ?? DEFAULT_LOGO),
+    translation: sanitizeTranslation(raw.translation, fallback.translation ?? null),
   };
 }

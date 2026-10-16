@@ -92,6 +92,13 @@ export function ClipCard({ jobId, clip }: { jobId: string; clip: Clip }) {
           >
             {copied ? 'Kopierat!' : 'Kopiera text'}
           </button>
+          <a
+            href={`/api/jobs/${jobId}/clips/${clip.id}/subtitles?format=srt`}
+            className="col-span-2 text-center text-xs text-gray-400 hover:text-white py-1"
+            title="Undertexter som fil, till exempel för YouTube eller ett redigeringsprogram"
+          >
+            Ladda ner undertexter (.srt)
+          </a>
         </div>
       </div>
     </div>

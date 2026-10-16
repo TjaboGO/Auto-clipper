@@ -12,7 +12,7 @@ import {
   keptRanges,
   keyframesForRange,
   outputDuration,
-  outputWords,
+  captionWords,
 } from './edit/timeline';
 import type { ClipEdit, ClipEditorData } from './edit/types';
 
@@ -64,7 +64,7 @@ export async function renderClipEdit(opts: {
   fs.writeFileSync(
     assPath,
     buildClipAss({
-      words: outputWords(edit, data.words, kept),
+      words: captionWords(edit, data.words, kept),
       clipLength: duration,
       captions: edit.captions,
       title: edit.title,

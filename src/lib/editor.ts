@@ -59,6 +59,20 @@ export function writeClipEdit(jobId: string, clipId: string, edit: ClipEdit): vo
 }
 
 /**
+ * The edit the clip's video was last rendered from, so its subtitle file
+ * matches the video even after changes that haven't been rendered yet.
+ */
+export function readRenderedEdit(jobId: string, clipId: string): ClipEdit | null {
+  const edit = readJson<ClipEdit>(editorFile(jobId, clipId, 'rendered.json'));
+  return edit && upgradeEdit(edit);
+}
+
+export function writeRenderedEdit(jobId: string, clipId: string, edit: ClipEdit): void {
+  jobEditorDir(jobId);
+  writeJson(editorFile(jobId, clipId, 'rendered.json'), edit);
+}
+
+/**
  * The preview video: H.264 in MP4 plays everywhere that matters; WebM (VP9)
  * is made instead for browsers without H.264 (some Chromium builds).
  */
@@ -351,6 +365,7 @@ async function renderEditedClip(jobId: string, clipId: string): Promise<void> {
       console.warn(`[editor] thumbnail for ${filename} failed:`, err);
     }
 
+    writeRenderedEdit(jobId, clipId, edit);
     const previous = clip.filename;
     updateClip(jobId, clipId, {
       filename,

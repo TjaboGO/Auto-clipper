@@ -33,6 +33,10 @@ och appen:
     och visar hur långt nedladdningen har kommit
 11. Låter dig välja AI-modell per steg: en billig för att lyssna, den bästa för att välja klipp.
     Klippvalet kan också gå via OpenRouter, så du kan använda vilken modell som helst där
+12. Översätter texterna till ett annat språk (engelska, tyska, spanska med flera), vid uppladdning
+    eller i redigeraren, där du också kan rätta varje mening
+13. Exporterar undertexter (.srt och .vtt) och laddar ner alla klipp i en ZIP med undertexter och en
+    fil med bildtexter och hashtags. Appen kan skyddas med ett lösenord
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -74,9 +78,11 @@ I Coolify: peka på det här repot, sätt `GEMINI_API_KEY` som miljövariabel, o
 `/app/storage` så att renderade klipp överlever omstarter. Källvideorna sparas också där (för
 redigeraren) i `SOURCE_RETENTION_DAYS` dagar, så räkna med plats för dem.
 
-**Viktigt:** appen har ingen inloggning. Alla som hittar adressen kan starta jobb på din
-Gemini-nyckel och din server, och ladda ner videor med dina YouTube-cookies om du har sparat
-några. Lägg den bakom något skydd om den ligger publikt, till exempel Basic Auth i Coolify.
+**Viktigt:** sätt `APP_PASSWORD` om appen ligger publikt. Utan den kan alla som hittar adressen
+starta jobb på din Gemini-nyckel och din server, och ladda ner videor med dina YouTube-cookies om
+du har sparat några. Med lösenord får alla sidor och API-anrop en inloggning, och du är inloggad i
+30 dagar. Skript kan skicka lösenordet som `Authorization: Bearer <lösenord>` istället. Byter du
+lösenord loggas alla ut. Kör appen över https (Coolify fixar det), så skickas lösenordet krypterat.
 
 **YouTube från en server:** YouTube stoppar ofta nedladdningar från datacenter ("Sign in to
 confirm you're not a bot"). Gå då till Inställningar i appen och klistra in en `cookies.txt` från
@@ -137,6 +143,18 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   över. Loggan sparas som PNG (högst 800 px) och läggs på i ffmpeg under texterna, på samma
   plats som i förhandsvisningen.
 - `src/app/settings` - inställningssidan: Min stil, egna typsnitt, logga och YouTube-cookies.
+- `src/lib/edit/translation.ts` - översatta texter. Varje mening översätts hel (ord för ord går
+  inte mellan språk) av samma modell som väljer klippen, och orden sprids över den tid den talade
+  meningen tar, längre ord får mer tid. Så följer markeringen talet även på det nya språket.
+  Översättningen sparas i klippets redigering, så den går att ångra och rätta.
+- `src/lib/edit/subtitles.ts` + `src/lib/exports.ts` + `src/lib/zip.ts` - undertextfiler med
+  samma ord som texterna i bilden (bortklippt, rättat, dolt och översatt följer med), i vanlig
+  undertextstorlek: högst två rader på runt 42 tecken. Filen följer den senast renderade versionen.
+  ZIP-filen skrivs av en liten egen ZIP-skrivare som strömmar klippen utan att packa dem i minnet.
+- `src/proxy.ts` + `src/lib/auth.ts` - lösenordet (`APP_PASSWORD`). Inloggningen ger en signerad
+  cookie. Uppladdningar går förbi proxyn, eftersom den bara skickar vidare de första 10 MB av en
+  förfrågan, och kollar inloggningen själva. Efter fem fel lösenord från samma adress får nästa
+  försök vänta, längre för varje gång.
 - `src/lib/render.ts` + `src/lib/renderGraph.ts` - renderar ett klipp i ett enda ffmpeg-kommando:
   beskärning (följ talaren, split screen, spel med facecam, skärm med ansikte, grupp, eller hela
   bilden med suddig bakgrund) i valt format. Layouter med flera delar beskär varje del för sig och
@@ -233,8 +251,12 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   uppdaterad (bygg om Docker-bilden) om nedladdningar börjar faila.
 - **En kö-arbetare i taget som standard** (`QUEUE_CONCURRENCY=1`). Höj den om servern har gott om
   CPU, men ffmpeg + ansiktsdetektering är tungt - testa dig fram.
-- **Ingen inloggning eller multi-user-stöd.** Det här är byggt som ett personligt verktyg, inte en
-  SaaS. Se varningen under Docker-avsnittet.
+- **Ett lösenord, inte flera användare.** Alla som har lösenordet ser samma jobb. Det här är byggt
+  som ett personligt verktyg, inte en SaaS. Se varningen under Docker-avsnittet.
+- **Översättningen är per mening.** Orden sprids jämnt över meningens tid, så markeringen följer
+  talet ungefär, inte exakt. Klipper du bort ord mitt i en mening visas ändå hela den översatta
+  meningen. Språk med andra skriftsystem (arabiska, kinesiska ...) finns inte med, eftersom
+  typsnitten saknar de tecknen.
 - **Lagring är lokala filer**, inte S3 eller liknande. Funkar fint på en enda server, men skalar
   inte till flera instanser utan ändringar.
 
@@ -249,7 +271,8 @@ börjar faila med att modellen inte hittas. Vill du ha olika modeller per steg f
 på OpenRouters modellsida, till exempel `google/gemini-3.8-flash`) går klippvalet via OpenRouter
 istället. Bara texten skickas dit, ljud och video går fortfarande till Gemini, så
 `GEMINI_API_KEY` behövs ändå. `WORD_TIMING` och `WHISPER_MODEL` styr ordtimingen, och
-`SOURCE_RETENTION_DAYS` hur länge källvideon sparas för redigeraren. `YTDLP_COOKIES` kan peka på en
+`SOURCE_RETENTION_DAYS` hur länge källvideon sparas för redigeraren. `APP_PASSWORD` sätter ett
+lösenord för hela appen (tomt = öppen). `YTDLP_COOKIES` kan peka på en
 egen cookies.txt för YouTube (annars sparas cookies från inställningssidan i
 `storage/youtube-cookies.txt`).
 
@@ -275,7 +298,7 @@ ordtiming, `yt-dlp` för YouTube-nedladdning.
 7. ~~Fler layouter: spel med facecam ovanpå varandra, skärmdelning med ansikte, och 3-4 personer.
    Välja AI-modell per steg och byta standardmodell till Gemini 3.8 Flash. OpenRouter som valfri
    leverantör för klippvalet~~ (klar)
-8. Lösenord för appen, översatta texter, SRT-export och alla klipp som ZIP
+8. ~~Lösenord för appen, översatta texter, SRT-export och alla klipp som ZIP~~ (klar)
 9. Emojis i texterna, fler textanimationer och automatisk zoom
 10. B-roll (till exempel från Pexels med din egen nyckel) och bakgrundsmusik
 11. Publicera direkt till YouTube, och export till Premiere och DaVinci Resolve

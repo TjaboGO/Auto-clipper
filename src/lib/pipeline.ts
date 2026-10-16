@@ -7,14 +7,15 @@ import { jobWorkDir, jobOutputDir, jobSourceDir } from './paths';
 import { renderQueue } from './queue';
 import { extractAudio, generateThumbnail, makeVisionCopy } from './ffmpeg';
 import { probeDimensions, probeDuration, probeHasAudio } from './probe';
-import { analyzeVideo, transcribeAudio, findHighlights } from './gemini';
+import { analyzeVideo, transcribeAudio, findHighlights, translateSentences } from './gemini';
 import { analyzeFraming } from './smartCrop';
 import { renderClipEdit } from './render';
-import { dropSource, sourceAvailable, writeClipEdit, writeEditorData } from './editor';
+import { dropSource, sourceAvailable, writeClipEdit, writeEditorData, writeRenderedEdit } from './editor';
 import { buildEditorWords, editWindow, keywordWordIds, needsFramingAnalysis } from './editorWords';
 import { defaultEdit, withStyle } from './edit/presets';
 import { brandInfo, brandStyle } from './brand';
 import { clipWords } from './edit/timeline';
+import { captionLanguage, sentencesToTranslate } from './edit/translation';
 import type { SourceInfo } from './edit/types';
 import {
   clipLength,
@@ -232,6 +233,12 @@ async function renderSuggestions(opts: {
   // "Min stil": the look saved in the editor (the karaoke style if it's gone).
   const mine = options.captionPreset === 'mine' ? brandStyle() : null;
   const hasLogo = !!brandInfo().logo;
+  // Translated captions: sentences already translated are reused by the
+  // next clip that has them too. If it fails, the clips get the spoken
+  // language (once said in the log).
+  const language = captionLanguage(options.translate);
+  const translated: Record<string, string> = {};
+  let translationFailed = false;
 
   const outDir = jobOutputDir(jobId);
   const failures: string[] = [];
@@ -272,11 +279,30 @@ async function renderSuggestions(opts: {
       }
       // Nobody talks in the clip: show its title instead of empty captions.
       if (spoken.length === 0) edit.title = { ...edit.title, enabled: true, duration: 'all' };
+      if (language && spoken.length > 0 && !translationFailed) {
+        const sentences = sentencesToTranslate(data.words, edit);
+        const missing = sentences.filter((s) => !(String(s.id) in translated));
+        try {
+          if (missing.length) Object.assign(translated, await translateSentences(missing, language.english));
+          const segments = Object.fromEntries(
+            sentences.filter((s) => String(s.id) in translated).map((s) => [String(s.id), translated[String(s.id)]]),
+          );
+          edit.translation = { lang: language.code, segments };
+        } catch (err) {
+          translationFailed = true;
+          logProgress(
+            jobId,
+            'rendering',
+            `Kunde inte översätta texterna (${errorMessage(err).split('\n')[0]}). Klippen får originalspråket.`,
+          );
+        }
+      }
       const result = await renderClipEdit({ sourcePath, data, edit, outPath, workDir, name: `clip_${index}` });
       layout = result.layout;
       clipDuration = result.duration;
       writeEditorData(jobId, id, data);
       writeClipEdit(jobId, id, edit);
+      writeRenderedEdit(jobId, id, edit);
     } catch (err) {
       console.error(`[pipeline] job ${jobId}: rendering ${filename} failed:`, err);
       failures.push(errorMessage(err));

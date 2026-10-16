@@ -5,6 +5,7 @@ services:
       - '3000:3000'
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - APP_PASSWORD=${APP_PASSWORD:-}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash}
       - GEMINI_TRANSCRIBE_MODEL=${GEMINI_TRANSCRIBE_MODEL:-}
       - GEMINI_VISION_MODEL=${GEMINI_VISION_MODEL:-}

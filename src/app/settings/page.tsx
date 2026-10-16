@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
+import { LogoutButton } from '@/components/LogoutButton';
 import {
   clearStyle,
   deleteCookies,
@@ -109,9 +110,12 @@ export default function SettingsPage() {
   return (
     <main className="max-w-3xl mx-auto px-4 py-12 md:py-16 space-y-6">
       <div>
-        <Link href="/" className="text-sm text-gray-400 hover:text-white">
-          &larr; Ny video
-        </Link>
+        <div className="flex items-center justify-between">
+          <Link href="/" className="text-sm text-gray-400 hover:text-white">
+            &larr; Ny video
+          </Link>
+          <LogoutButton />
+        </div>
         <h1 className="text-2xl font-bold mt-4">Inställningar</h1>
         <p className="text-sm text-gray-400 mt-1">Ditt varumärke för klippen, och cookies för YouTube.</p>
       </div>

@@ -126,6 +126,15 @@ export interface ClipEdit {
   panelSize: number | null;
   reframe: ReframeKey[];
   logo: LogoSettings;
+  /** The captions in another language, or null for the spoken one. */
+  translation: CaptionTranslation | null;
+}
+
+/** Translated captions: each transcript sentence (by its index) in another language. */
+export interface CaptionTranslation {
+  /** Language code, see CAPTION_LANGUAGES. */
+  lang: string;
+  segments: Record<string, string>;
 }
 
 /** "Min stil": how your clips look, saved from the editor and used for new clips. */

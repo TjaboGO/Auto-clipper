@@ -460,19 +460,71 @@ nobody speaks).
 Transcript:
 ${transcriptText}${visual.length ? `\n\nOn screen:\n${visualText}` : ''}`;
 
-  let suggestions: ClipSuggestion[];
-  if (config.highlightProvider === 'openrouter') {
-    // OpenRouter's errors already say what to fix.
-    suggestions = await openRouterJson<ClipSuggestion[]>(prompt, highlightSchema);
-  } else {
-    try {
-      suggestions = await generateJson<ClipSuggestion[]>(config.highlightModel, prompt, highlightSchema, ThinkingLevel.MEDIUM);
-    } catch (err) {
-      throw explainError(err, config.highlightModel, 'highlight');
-    }
-  }
+  const suggestions = await textJson<ClipSuggestion[]>(prompt, highlightSchema, ThinkingLevel.MEDIUM);
   if (!Array.isArray(suggestions)) return [];
   return cleanSuggestions(suggestions, transcript, opts);
+}
+
+/**
+ * A text-only task (picking clips, translating): the highlight model on
+ * Gemini, or OpenRouter when HIGHLIGHT_PROVIDER says so.
+ */
+async function textJson<T>(prompt: string, schema: Schema, level: ThinkingLevel): Promise<T> {
+  // OpenRouter's errors already say what to fix.
+  if (config.highlightProvider === 'openrouter') return openRouterJson<T>(prompt, schema);
+  try {
+    return await generateJson<T>(config.highlightModel, prompt, schema, level);
+  } catch (err) {
+    throw explainError(err, config.highlightModel, 'highlight');
+  }
+}
+
+const translationSchema: Schema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      id: { type: Type.INTEGER },
+      text: { type: Type.STRING },
+    },
+    required: ['id', 'text'],
+    propertyOrdering: ['id', 'text'],
+  },
+};
+
+/** Sentences per request: keeps each answer far below the output limit. */
+const TRANSLATE_BATCH = 120;
+
+/**
+ * Translate caption sentences into `language` (its English name), keyed
+ * by sentence id. Sentences the model skips are simply missing (those
+ * stay in the spoken language).
+ */
+export async function translateSentences(
+  sentences: { id: number; text: string }[],
+  language: string,
+): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  for (let i = 0; i < sentences.length; i += TRANSLATE_BATCH) {
+    const batch = sentences.slice(i, i + TRANSLATE_BATCH);
+    const prompt = `Translate these spoken sentences from a video into ${language}, for its captions. \
+They follow each other in the video, so use the context. Keep the meaning, tone and register of \
+spoken language (casual stays casual), keep names and numbers, and keep each translation about as \
+long as the original so it fits the same time on screen. Don't add or explain anything. If a \
+sentence is already in ${language}, keep it as it is.
+
+Answer with one item per sentence: its "id" and the translated "text".
+
+${batch.map((s) => `${s.id}: ${s.text}`).join('\n')}`;
+    const raw = await textJson<{ id: number; text: string }[]>(prompt, translationSchema, ThinkingLevel.LOW);
+    const wanted = new Set(batch.map((s) => s.id));
+    for (const item of Array.isArray(raw) ? raw : []) {
+      if (item && Number.isInteger(item.id) && wanted.has(item.id) && typeof item.text === 'string' && item.text.trim()) {
+        result[String(item.id)] = item.text.replace(/\s+/g, ' ').trim();
+      }
+    }
+  }
+  return result;
 }
 
 /**

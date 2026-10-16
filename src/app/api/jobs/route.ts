@@ -10,6 +10,7 @@ import { jobSourceDir } from '@/lib/paths';
 import { enqueueJob } from '@/lib/pipeline';
 import { isDownloadableUrl } from '@/lib/youtube';
 import { config } from '@/lib/config';
+import { requireAuth } from '@/lib/auth';
 import { sanitizeJobOptions } from '@/lib/jobOptions';
 import type { Job } from '@/lib/types';
 
@@ -65,6 +66,8 @@ function readOptions(raw: unknown) {
  * words, a topic to search for and a part of the video.
  */
 export async function POST(req: NextRequest) {
+  const denied = await requireAuth(req);
+  if (denied) return denied;
   try {
     if (!config.geminiApiKey) {
       return badRequest('Servern saknar GEMINI_API_KEY. Lägg till en nyckel i .env och starta om.', 500);
@@ -150,7 +153,9 @@ export async function POST(req: NextRequest) {
 }
 
 /** List recent jobs (used by the homepage to show history). */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const denied = await requireAuth(req);
+  if (denied) return denied;
   const jobs = jobStore.list().map((j) => ({
     id: j.id,
     status: j.status,

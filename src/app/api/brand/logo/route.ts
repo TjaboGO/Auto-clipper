@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { brandInfo, logoFile, MAX_LOGO_BYTES, removeLogo, setLogo } from '@/lib/brand';
+import { requireAuth } from '@/lib/auth';
 import { BodyTooLargeError, readLimitedBody } from '@/lib/requestBody';
 import { serveFile } from '@/lib/serveFile';
 
@@ -7,6 +8,8 @@ export const runtime = 'nodejs';
 
 /** The logo image. Asked for with ?v=<version>, so it can be cached for good. */
 export async function GET(req: NextRequest) {
+  const denied = await requireAuth(req);
+  if (denied) return denied;
   if (!brandInfo().logo) return NextResponse.json({ error: 'Ingen logga uppladdad.' }, { status: 404 });
   const cache = req.nextUrl.searchParams.get('v') ? 'public, max-age=31536000, immutable' : 'no-store';
   return serveFile(req, logoFile(), 'image/png', cache);
@@ -14,6 +17,8 @@ export async function GET(req: NextRequest) {
 
 /** Upload a logo (PNG, JPEG or WebP) as the request body. */
 export async function POST(req: NextRequest) {
+  const denied = await requireAuth(req);
+  if (denied) return denied;
   try {
     const logo = await setLogo(await readLimitedBody(req, MAX_LOGO_BYTES));
     return NextResponse.json({ logo, brand: brandInfo() }, { status: 201 });
@@ -25,7 +30,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(req: NextRequest) {
+  const denied = await requireAuth(req);
+  if (denied) return denied;
   removeLogo();
   return NextResponse.json({ brand: brandInfo() });
 }

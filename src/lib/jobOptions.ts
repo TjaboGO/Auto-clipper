@@ -1,6 +1,7 @@
 // What you can choose when starting a job (and when searching for more
 // clips). Plain TypeScript: the upload form and the server share it.
 import { ASPECT_RATIOS, CAPTION_PRESETS } from './edit/presets';
+import { CAPTION_LANGUAGES } from './edit/translation';
 import type { AspectRatio, CaptionPresetId } from './edit/types';
 
 export type ClipLengthId = 'auto' | 'short' | 'medium' | 'long' | 'xlong';
@@ -50,6 +51,8 @@ export interface JobOptions {
   range: { start: number; end: number } | null;
   /** Gemini also watches the video, to find moments without talk. */
   visual: VisualMode;
+  /** Translate the captions into this language (a CAPTION_LANGUAGES code), or '' to keep the spoken one. */
+  translate: string;
 }
 
 export const MAX_TOPIC_LENGTH = 200;
@@ -65,6 +68,7 @@ export function defaultJobOptions(): JobOptions {
     topic: '',
     range: null,
     visual: 'auto',
+    translate: '',
   };
 }
 
@@ -105,6 +109,7 @@ export function sanitizeJobOptions(raw: unknown): JobOptions {
     topic: sanitizeTopic(raw.topic),
     range,
     visual: pick(raw.visual, VISUAL_MODES.map((m) => m.id), defaults.visual),
+    translate: pick(raw.translate, ['', ...CAPTION_LANGUAGES.map((l) => l.code)], defaults.translate),
   };
 }
 

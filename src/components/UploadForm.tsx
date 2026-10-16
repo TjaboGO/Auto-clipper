@@ -7,6 +7,7 @@ import { AspectIcon, CaptionPresetPicker } from '@/components/CaptionStyleParts'
 import { useCaptionFonts } from '@/components/editor/useCaptionFonts';
 import { fetchBrand } from '@/components/brandApi';
 import { ASPECT_LABELS } from '@/lib/edit/layout';
+import { CAPTION_LANGUAGES, captionLanguage } from '@/lib/edit/translation';
 import { CAPTION_PRESETS, captionPreset } from '@/lib/edit/presets';
 import { captionFont, setCustomFonts } from '@/lib/edit/fonts';
 import type { BrandInfo } from '@/lib/edit/types';
@@ -189,6 +190,7 @@ export function UploadForm() {
     options.captionPreset === 'mine' ? 'Min stil' : captionPreset(options.captionPreset).label,
     options.keywords ? 'nyckelord' : null,
     options.visual === 'on' ? 'bildanalys' : options.visual === 'off' ? 'ingen bildanalys' : null,
+    options.translate ? `texter på ${captionLanguage(options.translate)?.label.toLowerCase()}` : null,
     from || to ? `${from || '0:00'}-${to || 'slut'}` : null,
   ]
     .filter(Boolean)
@@ -335,6 +337,21 @@ export function UploadForm() {
                 className="mt-1 h-4 w-4 accent-accent-500"
               />
             </label>
+            <Field label="Texternas språk">
+              <select
+                aria-label="Texternas språk"
+                value={options.translate}
+                onChange={(e) => set({ translate: e.target.value })}
+                className="w-full rounded-lg bg-base-800 px-3 py-2 text-sm"
+              >
+                <option value="">Samma som i videon</option>
+                {CAPTION_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    Översätt till {l.label.toLowerCase()}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field label="Bara en del av videon (valfritt)">
               <div className="flex items-center gap-2">
                 <input

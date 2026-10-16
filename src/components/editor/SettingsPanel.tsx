@@ -15,6 +15,7 @@ import {
   type ResolvedLayout,
 } from '@/lib/edit/layout';
 import { captionPreset, LOGO_CORNERS, presetCaptions, withStyle } from '@/lib/edit/presets';
+import { CAPTION_LANGUAGES, captionLanguage } from '@/lib/edit/translation';
 import type {
   AspectRatio,
   BrandInfo,
@@ -55,6 +56,10 @@ interface SettingsPanelProps {
   /** Your fonts, logo and "Min stil". */
   brand: BrandInfo;
   onBrand: (brand: BrandInfo) => void;
+  /** The clip's sentences (for editing their translations). */
+  sentences: { id: number; text: string }[];
+  /** Translate the captions into a language (puts the translation in the edit). */
+  onTranslate: (lang: string) => Promise<void>;
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -176,11 +181,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const camPossible = !!facecam && splitAllowed(edit.aspect);
   const groupSize = props.analysis?.group?.length ?? 0;
   const { brand, onBrand } = props;
-  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | null>(null);
+  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | 'translate' | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const setLogo = (patch: Partial<LogoSettings>, key?: string) => set({ ...edit, logo: { ...edit.logo, ...patch } }, key);
 
-  async function run(what: 'font' | 'logo' | 'style', job: () => Promise<string | null>) {
+  async function run(what: 'font' | 'logo' | 'style' | 'translate', job: () => Promise<string | null>) {
     setBusy(what);
     setMessage(null);
     try {
@@ -221,6 +226,23 @@ export function SettingsPanel(props: SettingsPanelProps) {
       );
       return 'Sparad som Min stil. Välj Min stil när du skapar klipp, så får de den här looken.';
     });
+
+  const translation = edit.translation;
+  const translateTo = (lang: string) => {
+    if (!lang) {
+      set({ ...edit, translation: null });
+      setMessage({ text: 'Texten visas på originalspråket igen.' });
+      return;
+    }
+    run('translate', async () => {
+      await props.onTranslate(lang);
+      return `Översatt till ${(captionLanguage(lang)?.label ?? lang).toLowerCase()}. Rätta meningarna här under om något blev fel.`;
+    });
+  };
+  const setSentence = (id: number, text: string) => {
+    if (!translation) return;
+    set({ ...edit, translation: { ...translation, segments: { ...translation.segments, [String(id)]: text } } }, `translation-${id}`);
+  };
 
   const applyMine = () => {
     if (!brand.style) return;
@@ -321,6 +343,55 @@ export function SettingsPanel(props: SettingsPanelProps) {
         {tab === 'text' && (
           <>
             <Toggle label="Visa undertexter" checked={captions.enabled} onChange={(v) => setCaptions({ enabled: v })} />
+            <Section title="Språk">
+              <div className="flex gap-2">
+                <select
+                  aria-label="Textens språk"
+                  value={translation?.lang ?? ''}
+                  disabled={busy === 'translate'}
+                  onChange={(e) => translateTo(e.target.value)}
+                  className="min-w-0 flex-1 rounded-md bg-base-800 px-2 py-1.5 text-sm disabled:opacity-50"
+                >
+                  <option value="">Originalspråket</option>
+                  {CAPTION_LANGUAGES.map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.label}
+                    </option>
+                  ))}
+                </select>
+                {translation && (
+                  <button
+                    type="button"
+                    onClick={() => translateTo(translation.lang)}
+                    disabled={busy === 'translate'}
+                    className="rounded-md px-2.5 py-1 text-xs font-medium bg-base-800 hover:bg-base-700 disabled:opacity-50"
+                    title="Översätt på nytt, till exempel efter att du ändrat klippets start eller slut"
+                  >
+                    Översätt igen
+                  </button>
+                )}
+              </div>
+              {busy === 'translate' && <p className="text-xs text-gray-400">Översätter ...</p>}
+              {translation && (
+                <details className="rounded-md bg-base-900 px-2 py-1.5">
+                  <summary className="cursor-pointer text-xs text-gray-300">Rätta översättningen</summary>
+                  <ul className="mt-2 space-y-2">
+                    {props.sentences.map((s) => (
+                      <li key={s.id} className="space-y-1">
+                        <p className="text-[11px] text-gray-500">{s.text}</p>
+                        <textarea
+                          rows={2}
+                          value={translation.segments[String(s.id)] ?? ''}
+                          placeholder="Inte översatt, visas på originalspråket"
+                          onChange={(e) => setSentence(s.id, e.target.value)}
+                          className="w-full resize-y rounded bg-base-800 px-2 py-1 text-xs"
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </Section>
             <Section title="Stil">
               <CaptionPresetPicker
                 value={captions.preset}

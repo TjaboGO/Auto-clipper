@@ -89,7 +89,7 @@ function boxText(page: CaptionPage, active: number): string {
 }
 
 export interface ClipAssOptions {
-  /** Caption words on the finished clip's timeline (see outputWords). */
+  /** Caption words on the finished clip's timeline (see captionWords). */
   words: OutputWord[];
   clipLength: number;
   captions: CaptionSettings;

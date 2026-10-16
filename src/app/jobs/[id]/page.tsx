@@ -8,6 +8,7 @@ import { ClipCard } from '@/components/ClipCard';
 import { SearchMore } from '@/components/SearchMore';
 import { captionPreset } from '@/lib/edit/presets';
 import { clipLength, formatClock, type JobOptions } from '@/lib/jobOptions';
+import { captionLanguage } from '@/lib/edit/translation';
 
 interface Clip {
   id: string;
@@ -50,6 +51,7 @@ function optionLabels(options?: JobOptions, watched?: boolean): string[] {
     options.aspect,
     options.captionPreset === 'mine' ? 'Min stil' : captionPreset(options.captionPreset).label,
     options.keywords ? 'Nyckelord' : '',
+    options.translate ? `Texter på ${captionLanguage(options.translate)?.label.toLowerCase() ?? options.translate}` : '',
     options.range ? `Del ${formatClock(options.range.start)}-${formatClock(options.range.end)}` : '',
   ].filter(Boolean);
 }
@@ -175,6 +177,18 @@ export default function JobPage() {
       )}
 
       {!isDone && <JobProgress steps={job.progress} isError={isError} error={job.error} />}
+
+      {isDone && clips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <a
+            href={`/api/jobs/${job.id}/zip`}
+            className="rounded-lg bg-accent-500 hover:bg-accent-400 px-4 py-2 text-sm font-semibold"
+          >
+            Ladda ner alla klipp (ZIP)
+          </a>
+          <span className="text-xs text-gray-500">Med undertexter (.srt) och en fil med bildtexter och hashtags.</span>
+        </div>
+      )}
 
       {clips.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
