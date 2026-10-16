@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildRenderGraph, keyframesToCropXExpr, type RenderGraphInput } from './renderGraph';
+import { framePanels } from './edit/layout';
 
 const source = { width: 1920, height: 1080, duration: 600, hasAudio: true };
 const captionsFilter = "ass=filename='clip.ass'";
@@ -63,19 +64,69 @@ test('fit layout: the whole frame over a blurred copy of itself', () => {
 });
 
 test('split layout stacks two crops of half the output height', () => {
-  const { graph } = buildRenderGraph(
-    input({
-      layout: 'split',
+  const source = { width: 1920, height: 1080, duration: 60, hasAudio: true };
+  const panels = framePanels({
+    layout: 'split',
+    source,
+    out: { w: 1080, h: 1920 },
+    analysis: {
+      start: 0,
+      end: 10,
+      auto: 'split',
+      keyframes: [{ t: 0, cx: 0.5, cut: true }],
       split: {
         top: { keyframes: [{ t: 0, cx: 0.2, cut: true }], y: 0.1, h: 0.5 },
         bottom: { keyframes: [{ t: 0, cx: 0.8, cut: true }], y: 0.9, h: 0.5 }, // y too low: clamped
       },
-    }),
-  );
+    },
+    swap: false,
+    panelSize: null,
+  });
+  const { graph } = buildRenderGraph(input({ layout: 'split', panels }));
   // 540 px tall crops (half the frame), 9:8 wide: 606 px.
-  assert.match(graph, /\[first\]crop=w=606:h=540:x='81':y=108,scale=1080:960\[top\]/);
-  assert.match(graph, /\[second\]crop=w=606:h=540:x='1233':y=540,scale=1080:960\[bottom\]/);
-  assert.match(graph, /\[top\]\[bottom\]vstack=inputs=2,setsar=1,ass=.*\[vout\]$/);
+  assert.match(graph, /^\[0:v\]split=2\[in0\]\[in1\];/);
+  assert.match(graph, /\[in0\]crop=w=606:h=540:x='81':y=108,scale=1080:960,setsar=1\[part0\]/);
+  assert.match(graph, /\[in1\]crop=w=606:h=540:x='1233':y=540,scale=1080:960,setsar=1\[part1\]/);
+  assert.match(graph, /\[part0\]\[part1\]xstack=inputs=2:layout=0_0\|0_960,setsar=1,ass=.*\[vout\]$/);
+});
+
+test('a facecam: the webcam on top, cut to its panel; the game below, clear of the webcam', () => {
+  const source = { width: 1920, height: 1080, duration: 60, hasAudio: true };
+  const panels = framePanels({
+    layout: 'facecam',
+    source,
+    out: { w: 1080, h: 1920 },
+    analysis: {
+      start: 0,
+      end: 10,
+      auto: 'facecam',
+      keyframes: [{ t: 0, cx: 0.5, cut: true }],
+      split: null,
+      facecam: {
+        // 480 x 270 px in the bottom-left corner: 16:9, so it gets 1080 x 606.
+        cam: { x: 0, y: 0.75, w: 0.25, h: 0.25 },
+        found: 'border',
+        kind: 'game',
+        face: [{ t: 0, cx: 0.12, cut: true }],
+        faceY: 0.85,
+        content: [{ t: 0, cx: 0.5, cut: true }, { t: 2, cx: 0.6, cut: false }],
+      },
+    },
+    swap: false,
+    panelSize: null,
+  });
+  assert.ok(panels);
+  const [camera, game] = panels;
+  assert.deepEqual(camera.dest, { x: 0, y: 0, w: 1080, h: 606 });
+  assert.equal(camera.role, 'camera');
+  assert.ok(camera.w <= 480 && camera.h <= 270 && camera.y >= 810, JSON.stringify(camera));
+  assert.deepEqual(game.dest, { x: 0, y: 606, w: 1080, h: 1314 });
+  // The game's crop starts right of the webcam (480 px, plus a little room), so the face isn't in it twice.
+  assert.equal(game.minX, 519);
+  const { graph } = buildRenderGraph(input({ layout: 'facecam', panels }));
+  assert.match(graph, /xstack=inputs=2:layout=0_0\|0_606,setsar=1,/);
+  // The game pans from the middle (held right of the webcam) to the right.
+  assert.match(graph, /\[in1\]crop=w=886:h=1080:x='if\(lt\(t,2\),519\+190\*\(t-0\)\/2,709\)':y=0,scale=1080:1314/);
 });
 
 test('cuts keep only the kept frames, close the gaps and join the audio with fades', () => {

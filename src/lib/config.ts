@@ -10,7 +10,20 @@ const storageDir = resolveStorageDir();
 
 export const config = {
   geminiApiKey: process.env.GEMINI_API_KEY || '',
-  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+  // A model per step, if you want: listening to the audio, watching the
+  // video, and picking the clips (where a stronger model pays off most).
+  // Empty = GEMINI_MODEL.
+  transcribeModel: process.env.GEMINI_TRANSCRIBE_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+  visionModel: process.env.GEMINI_VISION_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+  highlightModel: process.env.GEMINI_HIGHLIGHT_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+  // Picking the clips can go through OpenRouter instead, to use any model
+  // it has. Only the transcript goes there;
+  // the audio and video still go to Gemini.
+  highlightProvider: (process.env.HIGHLIGHT_PROVIDER || '').toLowerCase() === 'openrouter' ? ('openrouter' as const) : ('gemini' as const),
+  openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
+  openrouterModel: process.env.OPENROUTER_MODEL || 'google/gemini-3.8-flash',
+  openrouterBaseUrl: (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, ''),
   defaultClipCount: clampInt(process.env.DEFAULT_CLIP_COUNT, 6, 1, 15),
   queueConcurrency: clampInt(process.env.QUEUE_CONCURRENCY, 1, 1, 8),
   storageDir,

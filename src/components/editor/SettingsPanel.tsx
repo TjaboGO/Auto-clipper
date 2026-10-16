@@ -5,7 +5,15 @@ import { logoUrl, saveStyle, uploadFont, uploadLogo } from '@/components/brandAp
 import { AspectIcon, CaptionPresetPicker } from '@/components/CaptionStyleParts';
 import { FileButton } from '@/components/FileButton';
 import { CAPTION_FONTS, cssFontFamily, type CaptionFont } from '@/lib/edit/fonts';
-import { ASPECT_LABELS, splitAllowed, type ResolvedLayout } from '@/lib/edit/layout';
+import {
+  ASPECT_LABELS,
+  defaultCamShare,
+  defaultScreenShare,
+  OUTPUT_SIZES,
+  PANEL_SIZE_RANGE,
+  splitAllowed,
+  type ResolvedLayout,
+} from '@/lib/edit/layout';
 import { captionPreset, LOGO_CORNERS, presetCaptions, withStyle } from '@/lib/edit/presets';
 import type {
   AspectRatio,
@@ -16,6 +24,7 @@ import type {
   LayoutMode,
   LogoCorner,
   LogoSettings,
+  SourceInfo,
 } from '@/lib/edit/types';
 import { formatTime } from './format';
 
@@ -33,6 +42,9 @@ interface SettingsPanelProps {
   set: (edit: ClipEdit, key?: string) => void;
   analysis: FramingAnalysis | null;
   resolved: { layout: ResolvedLayout; note?: string };
+  /** Where the captions go unless moved (share of the height). */
+  captionAuto: number;
+  source: SourceInfo;
   /** Whether manual framing makes sense (the crop moves sideways). */
   canCrop: boolean;
   cropMode: boolean;
@@ -160,6 +172,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const setCaptions = (patch: Partial<CaptionSettings>, key?: string) =>
     set({ ...edit, captions: { ...captions, ...patch } }, key);
   const splitPossible = !!props.analysis?.split && splitAllowed(edit.aspect);
+  const facecam = props.analysis?.facecam ?? null;
+  const camPossible = !!facecam && splitAllowed(edit.aspect);
+  const groupSize = props.analysis?.group?.length ?? 0;
   const { brand, onBrand } = props;
   const [busy, setBusy] = useState<'font' | 'logo' | 'style' | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
@@ -214,7 +229,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
   };
 
   const layouts: { id: LayoutMode; label: string; hint: string; disabled?: boolean }[] = [
-    { id: 'auto', label: 'Auto', hint: 'Följer den som pratar, split screen vid snabba växlingar' },
+    { id: 'auto', label: 'Auto', hint: 'Väljer själv utifrån vad som syns i bilden' },
     { id: 'fill', label: 'Följ talaren', hint: 'Beskär runt den som pratar' },
     { id: 'fit', label: 'Hela bilden', hint: 'Hela videon, suddig bakgrund runt om' },
     {
@@ -223,7 +238,30 @@ export function SettingsPanel(props: SettingsPanelProps) {
       hint: splitPossible ? 'Två personer, en upptill och en nedtill' : 'Kräver två personer i bild (och inte 16:9)',
       disabled: !splitPossible,
     },
+    {
+      id: 'facecam',
+      label: 'Spel med facecam',
+      hint: camPossible ? 'Kameran upptill, spelet nedtill' : 'Kräver en webbkamera eller en ensam person i bild (och inte 16:9)',
+      disabled: !camPossible,
+    },
+    {
+      id: 'screen',
+      label: 'Skärm med ansikte',
+      hint: camPossible ? 'Skärmen upptill, personen nedtill' : 'Kräver en webbkamera eller en ensam person i bild (och inte 16:9)',
+      disabled: !camPossible,
+    },
+    {
+      id: 'group',
+      label: 'Grupp',
+      hint: groupSize >= 3 ? `${groupSize} personer, var och en i sin ruta` : 'Kräver 3-4 personer i bild',
+      disabled: groupSize < 3,
+    },
   ];
+  const out = OUTPUT_SIZES[edit.aspect];
+  const stackLayout = props.resolved.layout === 'facecam' || props.resolved.layout === 'screen';
+  const panelValue =
+    edit.panelSize ??
+    (props.resolved.layout === 'facecam' && facecam ? defaultCamShare(props.source, out, facecam) : defaultScreenShare(props.source, out));
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -334,7 +372,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
             <div className="space-y-1">
               <Slider
                 label="Placering"
-                value={captions.position ?? (props.resolved.layout === 'split' ? 0.5 : 0.72)}
+                value={captions.position ?? props.captionAuto}
                 min={0.05}
                 max={0.95}
                 step={0.01}
@@ -403,7 +441,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                     key={l.id}
                     type="button"
                     disabled={l.disabled}
-                    onClick={() => set({ ...edit, layout: l.id })}
+                    onClick={() => set({ ...edit, layout: l.id, panelSize: l.id === edit.layout ? edit.panelSize : null })}
                     className={`w-full rounded-md border px-3 py-2 text-left disabled:opacity-40 disabled:cursor-not-allowed ${edit.layout === l.id ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
                   >
                     <span className="block text-sm font-medium">{l.label}</span>
@@ -415,6 +453,34 @@ export function SettingsPanel(props: SettingsPanelProps) {
             </Section>
             {props.resolved.layout === 'split' && (
               <Toggle label="Byt plats på personerna" checked={edit.splitSwap} onChange={(v) => set({ ...edit, splitSwap: v })} />
+            )}
+            {stackLayout && facecam && (
+              <Section title={props.resolved.layout === 'facecam' ? 'Kameran' : 'Skärmen'}>
+                {facecam.found === 'guess' && (
+                  <p className="text-xs text-amber-300/90">
+                    Hittade ingen tydlig ram runt kameran, så rutan är uppskattad runt ansiktet.
+                  </p>
+                )}
+                <Slider
+                  label={props.resolved.layout === 'facecam' ? 'Kamerans storlek' : 'Skärmens storlek'}
+                  value={panelValue}
+                  min={PANEL_SIZE_RANGE.min}
+                  max={PANEL_SIZE_RANGE.max}
+                  step={0.01}
+                  format={(v) => (edit.panelSize == null ? `Auto (${Math.round(v * 100)} %)` : `${Math.round(v * 100)} %`)}
+                  onChange={(v, key) => set({ ...edit, panelSize: v }, key)}
+                />
+                {edit.panelSize != null && (
+                  <button type="button" onClick={() => set({ ...edit, panelSize: null })} className="text-xs text-accent-300 hover:text-accent-400">
+                    Automatisk storlek
+                  </button>
+                )}
+                <Toggle
+                  label={props.resolved.layout === 'facecam' ? 'Kameran nedtill' : 'Skärmen nedtill'}
+                  checked={edit.splitSwap}
+                  onChange={(v) => set({ ...edit, splitSwap: v })}
+                />
+              </Section>
             )}
             {props.canCrop && props.resolved.layout === 'single' && (
               <Section title="Beskärning">

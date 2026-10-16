@@ -7,7 +7,7 @@ import {
   type CaptionMetrics,
   type CaptionPage,
 } from './edit/captionLayout';
-import type { OutputSize, ResolvedLayout } from './edit/layout';
+import type { OutputSize } from './edit/layout';
 import type { OutputWord } from './edit/timeline';
 import type { AspectRatio, CaptionSettings, TitleSettings } from './edit/types';
 
@@ -95,7 +95,8 @@ export interface ClipAssOptions {
   captions: CaptionSettings;
   title: TitleSettings;
   out: OutputSize;
-  layout: ResolvedLayout;
+  /** Where the captions go unless the user moved them (see defaultCaptionPosition). */
+  captionY: number;
   aspect: AspectRatio;
 }
 
@@ -107,8 +108,8 @@ export interface ClipAssOptions {
  * cuts.
  */
 export function buildClipAss(opts: ClipAssOptions): string {
-  const { words, clipLength, captions, title, out, layout, aspect } = opts;
-  const m = captionMetrics(captions, out, layout, aspect);
+  const { words, clipLength, captions, title, out, captionY, aspect } = opts;
+  const m = captionMetrics(captions, out, captionY, aspect);
   const t = titleMetrics(captions, title.duration, out, aspect, clipLength);
   const text = styleColour(captions.textColor);
 

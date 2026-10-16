@@ -309,11 +309,19 @@ async function renderSuggestions(opts: {
     logProgress(
       jobId,
       'rendering',
-      `Klar: "${suggestion.title}" (${i + 1}/${suggestions.length}${layout === 'split' ? ', split screen' : ''})`,
+      `Klar: "${suggestion.title}" (${i + 1}/${suggestions.length}${layout && LAYOUT_NOTES[layout] ? `, ${LAYOUT_NOTES[layout]}` : ''})`,
     );
   }
   return { rendered, failures };
 }
+
+/** Layouts worth a mention in the progress log. */
+const LAYOUT_NOTES: Partial<Record<NonNullable<RenderedClip['layout']>, string>> = {
+  split: 'split screen',
+  facecam: 'spel med facecam',
+  screen: 'skärm med ansikte',
+  group: 'grupp',
+};
 
 /**
  * Full pipeline for one job: ingest -> transcribe (all of the video, or the

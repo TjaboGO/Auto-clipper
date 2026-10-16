@@ -1,4 +1,5 @@
 import { allFonts } from './fonts';
+import { PANEL_SIZE_RANGE } from './layout';
 import type {
   AspectRatio,
   BrandStyle,
@@ -81,7 +82,7 @@ export function presetCaptions(id: CaptionPresetId, keep?: Partial<CaptionSettin
 export const ASPECT_RATIOS: AspectRatio[] = ['9:16', '1:1', '4:5', '16:9'];
 export const LOGO_CORNERS: LogoCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 export const DEFAULT_LOGO: LogoSettings = { enabled: false, corner: 'top-right', size: 0.16, opacity: 1 };
-export const LAYOUT_MODES: LayoutMode[] = ['auto', 'fill', 'fit', 'split'];
+export const LAYOUT_MODES: LayoutMode[] = ['auto', 'fill', 'fit', 'split', 'facecam', 'screen', 'group'];
 
 /** How the pipeline renders a fresh clip: no cuts, auto framing, the job's format and caption style. */
 export function defaultEdit(opts: {
@@ -104,6 +105,7 @@ export function defaultEdit(opts: {
     aspect: opts.aspect ?? '9:16',
     layout: 'auto',
     splitSwap: false,
+    panelSize: null,
     reframe: [],
     logo: { ...DEFAULT_LOGO },
   };
@@ -167,7 +169,15 @@ export function sanitizeLogo(raw: unknown, fallback: LogoSettings): LogoSettings
 
 /** An edit saved before a setting existed gets that setting's default. */
 export function upgradeEdit(edit: ClipEdit): ClipEdit {
-  return { ...edit, logo: sanitizeLogo(edit.logo, DEFAULT_LOGO) };
+  return { ...edit, logo: sanitizeLogo(edit.logo, DEFAULT_LOGO), panelSize: panelSize(edit.panelSize, null) };
+}
+
+/** Facecam / screen: the camera's or screen's share of the height, or null = automatic. */
+function panelSize(value: unknown, fallback: number | null): number | null {
+  if (value === null) return null;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(PANEL_SIZE_RANGE.max, Math.max(PANEL_SIZE_RANGE.min, value))
+    : fallback;
 }
 
 /** The clip with "Min stil" on it: text, title and logo (a logo only if there is one). */
@@ -262,6 +272,7 @@ export function sanitizeEdit(
     aspect: oneOf(raw.aspect, ASPECT_RATIOS, fallback.aspect),
     layout: oneOf(raw.layout, LAYOUT_MODES, fallback.layout),
     splitSwap: bool(raw.splitSwap, fallback.splitSwap),
+    panelSize: panelSize(raw.panelSize, fallback.panelSize ?? null),
     reframe,
     logo: sanitizeLogo(raw.logo, fallback.logo ?? DEFAULT_LOGO),
   };

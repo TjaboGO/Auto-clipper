@@ -14,6 +14,7 @@ import {
 } from '@google/genai';
 import { config } from './config';
 import { screenEdges } from './moments';
+import { openRouterJson } from './openrouter';
 import type { ClipSuggestion, TranscriptSegment, VisualKind, VisualMoment } from './types';
 
 let cachedClient: GoogleGenAI | null = null;
@@ -35,8 +36,8 @@ function client(): GoogleGenAI {
 }
 
 /** Gemini 3+ models take a thinking level; older models keep their defaults. */
-function thinking(level: ThinkingLevel): ThinkingConfig | undefined {
-  const major = /^gemini-(\d+)/.exec(config.geminiModel)?.[1];
+export function thinking(model: string, level: ThinkingLevel): ThinkingConfig | undefined {
+  const major = /^gemini-(\d+)/.exec(model)?.[1];
   return major && Number(major) >= 3 ? { thinkingLevel: level } : undefined;
 }
 
@@ -51,19 +52,26 @@ function apiMessage(err: ApiError): string {
   return err.message;
 }
 
+/** Which setting names the model for a step, for error messages. */
+const MODEL_SETTING: Record<string, string> = {
+  transcribe: 'GEMINI_TRANSCRIBE_MODEL eller GEMINI_MODEL',
+  vision: 'GEMINI_VISION_MODEL eller GEMINI_MODEL',
+  highlight: 'GEMINI_HIGHLIGHT_MODEL eller GEMINI_MODEL',
+};
+
 /** Turn API errors into messages that say what to fix (shown in the UI). */
-function explainError(err: unknown): Error {
+function explainError(err: unknown, model: string, step: keyof typeof MODEL_SETTING): Error {
   if (err instanceof ApiError) {
     if (err.status === 400 && /api key/i.test(err.message)) {
       return new Error('Gemini godkände inte API-nyckeln. Kolla GEMINI_API_KEY.');
     }
     if (err.status === 403) {
       return new Error(
-        `Gemini nekade åtkomst (403). Kolla att API-nyckeln är giltig och får använda ${config.geminiModel}.`,
+        `Gemini nekade åtkomst (403). Kolla att API-nyckeln är giltig och får använda ${model}.`,
       );
     }
     if (err.status === 404) {
-      return new Error(`Gemini hittar inte modellen "${config.geminiModel}". Kolla GEMINI_MODEL.`);
+      return new Error(`Gemini hittar inte modellen "${model}". Kolla ${MODEL_SETTING[step]}.`);
     }
     if (err.status === 429) {
       return new Error('Gemini-kvoten är slut just nu (429). Vänta en stund och försök igen.');
@@ -125,6 +133,7 @@ function parseJsonLoose<T>(raw: string): T {
  * isn't usable JSON (cut off, empty, malformed).
  */
 async function generateJson<T>(
+  model: string,
   contents: ContentListUnion,
   schema: Schema,
   level: ThinkingLevel,
@@ -133,12 +142,12 @@ async function generateJson<T>(
   let lastError: Error = new Error('Gemini returned no usable answer.');
   for (let attempt = 1; attempt <= 2; attempt++) {
     const response = await client().models.generateContent({
-      model: config.geminiModel,
+      model,
       contents,
       config: {
         responseMimeType: 'application/json',
         responseSchema: schema,
-        thinkingConfig: thinking(level),
+        thinkingConfig: thinking(model, level),
         mediaResolution,
       },
     });
@@ -209,13 +218,14 @@ what is actually said). Keep the original spoken language, do not translate. If 
 return an empty array.`;
 
     const raw = await generateJson<TranscriptSegment[]>(
+      config.transcribeModel,
       [createPartFromUri(uploaded.uri, uploaded.mimeType), prompt],
       transcriptSchema,
       ThinkingLevel.LOW,
     );
     return tidySegments(Array.isArray(raw) ? raw : [], durationSec);
   } catch (err) {
-    throw explainError(err);
+    throw explainError(err, config.transcribeModel, 'transcribe');
   } finally {
     if (uploaded) {
       // Uploaded files expire on their own after 48h; this just tidies up.
@@ -302,6 +312,7 @@ music drop). Same language as any speech in the video; if nobody speaks, write i
 Moments must be in chronological order and must not overlap. Return an empty array if nothing \
 worth clipping happens.`;
     const raw = await generateJson<VisualMoment[]>(
+      config.visionModel,
       [createPartFromUri(uploaded.uri, uploaded.mimeType), prompt],
       visualSchema,
       ThinkingLevel.LOW,
@@ -309,7 +320,7 @@ worth clipping happens.`;
     );
     return tidyMoments(Array.isArray(raw) ? raw : [], durationSec);
   } catch (err) {
-    throw explainError(err);
+    throw explainError(err, config.visionModel, 'vision');
   } finally {
     if (uploaded) client().files.delete({ name: uploaded.name }).catch(() => undefined);
   }
@@ -450,10 +461,15 @@ Transcript:
 ${transcriptText}${visual.length ? `\n\nOn screen:\n${visualText}` : ''}`;
 
   let suggestions: ClipSuggestion[];
-  try {
-    suggestions = await generateJson<ClipSuggestion[]>(prompt, highlightSchema, ThinkingLevel.MEDIUM);
-  } catch (err) {
-    throw explainError(err);
+  if (config.highlightProvider === 'openrouter') {
+    // OpenRouter's errors already say what to fix.
+    suggestions = await openRouterJson<ClipSuggestion[]>(prompt, highlightSchema);
+  } else {
+    try {
+      suggestions = await generateJson<ClipSuggestion[]>(config.highlightModel, prompt, highlightSchema, ThinkingLevel.MEDIUM);
+    } catch (err) {
+      throw explainError(err, config.highlightModel, 'highlight');
+    }
   }
   if (!Array.isArray(suggestions)) return [];
   return cleanSuggestions(suggestions, transcript, opts);

@@ -34,7 +34,7 @@ function build(words: OutputWord[], patch: Partial<ClipAssOptions> = {}, preset:
     captions: presetCaptions(preset),
     title: { enabled: false, text: '', duration: 'intro' },
     out: { w: 1080, h: 1920 },
-    layout: 'single',
+    captionY: 0.72,
     aspect: '9:16',
     ...patch,
   });
@@ -131,9 +131,12 @@ test('captions can be turned off', () => {
   assert.equal(dialogue(build([word('tyst', 0, 0.5)], { captions })).length, 0);
 });
 
-test('split screen puts the captions on the seam', () => {
-  const [first] = dialogue(build([word('mitten', 0, 0.5)], { layout: 'split' }));
+test('the automatic position puts the captions there, unless the user moved them', () => {
+  const [first] = dialogue(build([word('mitten', 0, 0.5)], { captionY: 0.5 }));
   assert.ok(first.text.startsWith('{\\an5\\pos(540,960)}'));
+  const captions = { ...presetCaptions('karaoke'), position: 0.25 };
+  const [moved] = dialogue(build([word('upp', 0, 0.5)], { captionY: 0.5, captions }));
+  assert.ok(moved.text.startsWith('{\\an5\\pos(540,480)}'));
 });
 
 test('a single word too long for the frame is shrunk to fit', () => {

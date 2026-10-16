@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { captionMetrics, captionPages, titleMetrics } from '@/lib/edit/captionLayout';
-import { OUTPUT_SIZES, resolveLayout, singleCrop } from '@/lib/edit/layout';
+import { defaultCaptionPosition, framePanels, OUTPUT_SIZES, resolveLayout, singleCrop } from '@/lib/edit/layout';
 import { MIN_CLIP_SECONDS } from '@/lib/edit/presets';
 import { CAPTION_FONTS, setCustomFonts } from '@/lib/edit/fonts';
 import {
@@ -101,9 +101,22 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
   const kept = useMemo(() => keptRanges(edit, words), [edit, words]);
   const duration = outputDuration(kept);
   const outWords = useMemo(() => outputWords(edit, words, kept), [edit, words, kept]);
+  const panels = useMemo(
+    () =>
+      framePanels({
+        layout: resolved.layout,
+        source: data.source,
+        out,
+        analysis: data.analysis,
+        swap: edit.splitSwap,
+        panelSize: edit.panelSize,
+      }),
+    [resolved.layout, data.source, out, data.analysis, edit.splitSwap, edit.panelSize],
+  );
+  const captionAuto = defaultCaptionPosition(resolved.layout, edit.aspect, panels);
   const metrics = useMemo(
-    () => captionMetrics(edit.captions, out, resolved.layout, edit.aspect),
-    [edit.captions, out, resolved.layout, edit.aspect],
+    () => captionMetrics(edit.captions, out, captionAuto, edit.aspect),
+    [edit.captions, out, captionAuto, edit.aspect],
   );
   const pages = useMemo(
     () =>
@@ -122,16 +135,10 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
     () => applyReframe(data.analysis?.keyframes ?? [], edit.reframe),
     [data.analysis, edit.reframe],
   );
-  const spec: FrameSpec = useMemo(() => {
-    const split = data.analysis?.split ?? null;
-    return {
-      source: data.source,
-      out,
-      layout: resolved.layout,
-      keyframes,
-      split: split && edit.splitSwap ? { top: split.bottom, bottom: split.top } : split,
-    };
-  }, [data.source, data.analysis, out, resolved.layout, keyframes, edit.splitSwap]);
+  const spec: FrameSpec = useMemo(
+    () => ({ source: data.source, out, layout: resolved.layout, keyframes, panels }),
+    [data.source, out, resolved.layout, keyframes, panels],
+  );
   const inClip = useMemo(() => clipWords(words, edit), [words, edit]);
   const removed = useMemo(() => removedWordIds(edit, inClip), [edit, inClip]);
   const fillerCount = inClip.filter((w) => w.filler).length;
@@ -520,6 +527,8 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             set={set}
             analysis={data.analysis}
             resolved={resolved}
+            captionAuto={captionAuto}
+            source={data.source}
             canCrop={canCrop}
             cropMode={cropMode}
             onCropMode={setCropMode}

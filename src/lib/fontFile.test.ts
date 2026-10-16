@@ -68,9 +68,9 @@ test('your fonts are found by id, and a deleted one falls back to Montserrat', (
 
 test('a wide font fits fewer letters on a line', () => {
   const out = { w: 1080, h: 1920 };
-  const normal = layoutMetrics(presetCaptions('karaoke'), out, 'single', '9:16');
-  const pixel = layoutMetrics({ ...presetCaptions('karaoke'), font: 'pixel' }, out, 'single', '9:16');
-  const narrow = layoutMetrics({ ...presetCaptions('karaoke'), font: 'oswald' }, out, 'single', '9:16');
+  const normal = layoutMetrics(presetCaptions('karaoke'), out, 0.72, '9:16');
+  const pixel = layoutMetrics({ ...presetCaptions('karaoke'), font: 'pixel' }, out, 0.72, '9:16');
+  const narrow = layoutMetrics({ ...presetCaptions('karaoke'), font: 'oswald' }, out, 0.72, '9:16');
   assert.ok(pixel.maxChars < normal.maxChars, `${pixel.maxChars} < ${normal.maxChars}`);
   assert.ok(narrow.maxChars > normal.maxChars, `${narrow.maxChars} > ${normal.maxChars}`);
 });

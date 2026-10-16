@@ -69,6 +69,9 @@ export async function POST(req: NextRequest) {
     if (!config.geminiApiKey) {
       return badRequest('Servern saknar GEMINI_API_KEY. Lägg till en nyckel i .env och starta om.', 500);
     }
+    if (config.highlightProvider === 'openrouter' && !config.openrouterApiKey) {
+      return badRequest('HIGHLIGHT_PROVIDER=openrouter kräver OPENROUTER_API_KEY. Lägg till nyckeln i .env och starta om.', 500);
+    }
 
     const contentType = req.headers.get('content-type') || '';
     const jobId = crypto.randomUUID();

@@ -8,12 +8,15 @@ export type AspectRatio = '9:16' | '1:1' | '4:5' | '16:9';
 
 /**
  * How a clip is framed:
- *  - auto: follow the speaker, or split screen when two people take quick turns
+ *  - auto: picks one of the others from what's in the picture
  *  - fill: always follow one person (crop)
  *  - fit: the whole frame, with a blurred copy behind it
  *  - split: two people stacked, one on top and one below
+ *  - facecam: a webcam over gameplay: the camera on top, the game below
+ *  - screen: a webcam over a screen recording: the screen on top, the face below
+ *  - group: 3-4 people, each in their own part of the frame
  */
-export type LayoutMode = 'auto' | 'fill' | 'fit' | 'split';
+export type LayoutMode = 'auto' | 'fill' | 'fit' | 'split' | 'facecam' | 'screen' | 'group';
 
 export type CaptionPresetId = 'karaoke' | 'box' | 'pop' | 'word' | 'clean';
 
@@ -114,8 +117,13 @@ export interface ClipEdit {
   title: TitleSettings;
   aspect: AspectRatio;
   layout: LayoutMode;
-  /** Split screen: put the person on the right on top. */
+  /** Split screen: put the person on the right on top. Facecam and screen: put the camera / screen at the bottom. */
   splitSwap: boolean;
+  /**
+   * Facecam: how much of the frame's height the camera gets. Screen: how
+   * much the screen gets. null = automatic.
+   */
+  panelSize: number | null;
   reframe: ReframeKey[];
   logo: LogoSettings;
 }
@@ -172,16 +180,56 @@ export interface SplitHalf {
   h: number;
 }
 
+/** A part of the source frame, as shares (0..1) of its width and height. */
+export interface SourceRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** A webcam box over gameplay or a screen recording. */
+export interface FacecamInfo {
+  /** The webcam's box in the source. */
+  cam: SourceRect;
+  /** 'border': its edges were found in the picture. 'guess': a box around the face. */
+  found: 'border' | 'guess';
+  /** What's around it: moving gameplay, or a mostly still screen (slides, code, a website). */
+  kind: 'game' | 'screen';
+  /** The face's horizontal position over time. t = source seconds. */
+  face: CropKeyframe[];
+  /** The face's vertical center, as a share of the source height. */
+  faceY: number;
+  /** Crop keyframes that follow the action around the webcam. t = source seconds. */
+  content: CropKeyframe[];
+}
+
+/** One of 3-4 people for the group layout. */
+export interface GroupPerson {
+  /** Where they are over time. t = source seconds. */
+  keyframes: CropKeyframe[];
+  /** Face center and height, as shares of the source height. */
+  faceY: number;
+  faceH: number;
+}
+
+/** What the analysis picks when nobody has chosen a layout. */
+export type AutoLayout = 'single' | 'split' | 'facecam' | 'screen' | 'group';
+
 /** The face analysis of a stretch of the source (scripts/smart_crop.py). */
 export interface FramingAnalysis {
   start: number; // source seconds analysed
   end: number;
-  /** What looks best without any input: follow the speaker, or split screen. */
-  auto: 'single' | 'split';
+  /** What looks best without any input. */
+  auto: AutoLayout;
   /** Crop keyframes that follow whoever is talking. t = source seconds. */
   keyframes: CropKeyframe[];
   /** The two main people, if there are two. t = source seconds. */
   split: { top: SplitHalf; bottom: SplitHalf } | null;
+  /** One person in a webcam box, if it looks like that (missing in older analyses). */
+  facecam?: FacecamInfo | null;
+  /** 3-4 people on screen most of the time, left to right (missing in older analyses). */
+  group?: GroupPerson[] | null;
 }
 
 export interface SourceInfo {

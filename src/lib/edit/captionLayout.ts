@@ -1,6 +1,6 @@
 import { captionFont, type CaptionFont } from './fonts';
 import { captionPreset } from './presets';
-import { defaultCaptionPosition, type OutputSize, type ResolvedLayout } from './layout';
+import type { OutputSize } from './layout';
 import type { OutputWord } from './timeline';
 import type { AspectRatio, CaptionSettings } from './types';
 
@@ -126,10 +126,11 @@ export interface CaptionMetrics {
   activeScale: number;
 }
 
+/** `autoY`: where the captions go unless the user moved them (see defaultCaptionPosition). */
 export function captionMetrics(
   settings: CaptionSettings,
   out: OutputSize,
-  layout: ResolvedLayout,
+  autoY: number,
   aspect: AspectRatio,
 ): CaptionMetrics {
   const font = captionFont(settings.font);
@@ -143,7 +144,7 @@ export function captionMetrics(
   const maxChars = Math.round(
     (BASE_PAGE_CHARS * ((out.w - 2 * marginX) / (1080 - 2 * BASE_SIDE_MARGIN))) / (relative * font.widthFactor),
   );
-  const position = settings.position ?? defaultCaptionPosition(layout, aspect);
+  const position = settings.position ?? autoY;
   return {
     font,
     fontSize,

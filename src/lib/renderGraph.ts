@@ -1,5 +1,5 @@
-import { cropLeft, fitRect, singleCrop, splitCrop, type OutputSize, type ResolvedLayout } from './edit/layout';
-import type { CropKeyframe, SourceInfo, SplitHalf, TimeRange } from './edit/types';
+import { cropLeft, fitRect, singleCrop, type OutputSize, type Panel, type ResolvedLayout } from './edit/layout';
+import type { CropKeyframe, SourceInfo, TimeRange } from './edit/types';
 
 function num(n: number): string {
   return String(Math.round(n * 1000) / 1000);
@@ -20,8 +20,9 @@ export function keyframesToCropXExpr(
   keyframes: CropKeyframe[],
   cropWidth: number,
   sourceWidth: number,
+  bounds?: { min: number; max: number },
 ): string {
-  const toPixelX = (cx: number): number => cropLeft(cx, cropWidth, sourceWidth);
+  const toPixelX = (cx: number): number => cropLeft(cx, cropWidth, sourceWidth, bounds?.min, bounds?.max);
   if (keyframes.length === 1) {
     return String(toPixelX(keyframes[0].cx));
   }
@@ -56,8 +57,8 @@ export interface RenderGraphInput {
   layout: ResolvedLayout;
   /** single: crop keyframes on the clip's timeline (0 = clip start). */
   keyframes: CropKeyframe[];
-  /** split: the two people's crops, keyframes on the clip's timeline. */
-  split?: { top: SplitHalf; bottom: SplitHalf };
+  /** split, facecam, screen, group: the parts of the frame, keyframes on the clip's timeline. */
+  panels?: Panel[] | null;
   /** The parts of the clip that are kept, on the clip's timeline. */
   kept: TimeRange[];
   /** How much of the source ffmpeg reads (end - start of the clip). */
@@ -69,7 +70,7 @@ export interface RenderGraphInput {
   logo?: { rect: { x: number; y: number; w: number; h: number }; opacity: number };
 }
 
-/** The video part of the graph up to the finished frame: crop, split screen or fit. */
+/** The video part of the graph up to the finished frame: crop, parts stacked together, or fit. */
 function framingChain(input: RenderGraphInput): string {
   const { source, out, layout } = input;
   if (layout === 'fit') {
@@ -86,16 +87,19 @@ function framingChain(input: RenderGraphInput): string {
       `[bg][fg]overlay=${rect.x}:${rect.y}`
     );
   }
-  if (layout === 'split' && input.split) {
-    const half = (h: SplitHalf): string => {
-      const box = splitCrop(source, out, h);
-      const x = keyframesToCropXExpr(h.keyframes, box.w, source.width);
-      return `crop=w=${box.w}:h=${box.h}:x='${x}':y=${box.y},scale=${out.w}:${out.h / 2}`;
-    };
+  if (input.panels && input.panels.length >= 2) {
+    // Every part crops its own copy of the picture; xstack puts them
+    // together at their places in the frame.
+    const panels = input.panels;
+    const parts = panels.map((p, i) => {
+      const x = keyframesToCropXExpr(p.keyframes, p.w, source.width, { min: p.minX, max: p.maxX });
+      return `[in${i}]crop=w=${p.w}:h=${p.h}:x='${x}':y=${p.y},scale=${p.dest.w}:${p.dest.h},setsar=1[part${i}]`;
+    });
     return (
-      `[0:v]split=2[first][second];` +
-      `[first]${half(input.split.top)}[top];[second]${half(input.split.bottom)}[bottom];` +
-      `[top][bottom]vstack=inputs=2`
+      `[0:v]split=${panels.length}${panels.map((_, i) => `[in${i}]`).join('')};` +
+      parts.join(';') +
+      `;${panels.map((_, i) => `[part${i}]`).join('')}xstack=inputs=${panels.length}:layout=` +
+      panels.map((p) => `${p.dest.x}_${p.dest.y}`).join('|')
     );
   }
   const box = singleCrop(source, out);

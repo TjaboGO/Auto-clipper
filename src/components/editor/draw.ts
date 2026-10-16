@@ -3,9 +3,9 @@
 // caption pages, sizes and colours as the .ass file (captions.ts).
 import { pageScale, wordColor, type CaptionMetrics, type CaptionPage, type TitleMetrics } from '@/lib/edit/captionLayout';
 import { cssFontFamily, type CaptionFont } from '@/lib/edit/fonts';
-import { cropLeft, fitRect, singleCrop, splitCrop, type OutputSize, type ResolvedLayout } from '@/lib/edit/layout';
+import { cropLeft, fitRect, singleCrop, type OutputSize, type Panel, type ResolvedLayout } from '@/lib/edit/layout';
 import { cxAt } from '@/lib/edit/timeline';
-import type { CaptionSettings, CropKeyframe, SourceInfo, SplitHalf } from '@/lib/edit/types';
+import type { CaptionSettings, CropKeyframe, SourceInfo } from '@/lib/edit/types';
 
 export interface FrameSpec {
   source: SourceInfo;
@@ -13,7 +13,8 @@ export interface FrameSpec {
   layout: ResolvedLayout;
   /** Crop keyframes for the single layout, source times. */
   keyframes: CropKeyframe[];
-  split: { top: SplitHalf; bottom: SplitHalf } | null;
+  /** The parts of a split screen, facecam, screen or group layout (see framePanels). */
+  panels: Panel[] | null;
 }
 
 let blurCanvas: HTMLCanvasElement | null = null;
@@ -52,12 +53,12 @@ export function drawFrame(ctx: CanvasRenderingContext2D, video: HTMLVideoElement
     return;
   }
 
-  if (spec.layout === 'split' && spec.split) {
-    [spec.split.top, spec.split.bottom].forEach((half, i) => {
-      const box = splitCrop(spec.source, spec.out, half);
-      const x = cropLeft(cxAt(half.keyframes, t), box.w, spec.source.width);
-      ctx.drawImage(video, x * ps, box.y * ps, box.w * ps, box.h * ps, 0, (i * H) / 2, W, H / 2);
-    });
+  if (spec.panels && spec.panels.length >= 2) {
+    const k = W / spec.out.w;
+    for (const p of spec.panels) {
+      const x = cropLeft(cxAt(p.keyframes, t), p.w, spec.source.width, p.minX, p.maxX);
+      ctx.drawImage(video, x * ps, p.y * ps, p.w * ps, p.h * ps, p.dest.x * k, p.dest.y * k, p.dest.w * k, p.dest.h * k);
+    }
     return;
   }
 
@@ -66,7 +67,6 @@ export function drawFrame(ctx: CanvasRenderingContext2D, video: HTMLVideoElement
   ctx.drawImage(video, x * ps, box.y * ps, box.w * ps, box.h * ps, 0, 0, W, H);
 }
 
-/** Manual framing: the whole source frame with the crop window on it. */
 /** The logo, where logoRect puts it in the render (under the captions). */
 export function drawLogo(
   ctx: CanvasRenderingContext2D,
@@ -83,6 +83,7 @@ export function drawLogo(
   ctx.restore();
 }
 
+/** Manual framing: the whole source frame with the crop window on it. */
 export function drawCropView(
   ctx: CanvasRenderingContext2D,
   video: HTMLVideoElement,

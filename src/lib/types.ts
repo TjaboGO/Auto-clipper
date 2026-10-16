@@ -59,8 +59,8 @@ export interface RenderedClip extends ClipSuggestion {
   durationSec: number;
   /** 'exact': word times from Whisper. 'estimated': split from Gemini's segment times. */
   wordTiming?: 'exact' | 'estimated';
-  /** How the clip is framed: following the speaker, split screen, or the whole frame. */
-  layout?: 'single' | 'split' | 'fit' | 'letterbox';
+  /** How the clip is framed ('letterbox' is from older versions: the whole frame). */
+  layout?: 'single' | 'split' | 'fit' | 'facecam' | 'screen' | 'group' | 'letterbox';
   /** 1 for the pipeline's render, +1 for each render from the editor. */
   version?: number;
   /** Set while a render from the editor is waiting, running or has failed. */

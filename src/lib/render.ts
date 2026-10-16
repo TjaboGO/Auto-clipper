@@ -6,7 +6,7 @@ import { brandInfo, customFontPath, logoFile } from './brand';
 import { buildClipAss, escapeFfmpegFilterPath } from './captions';
 import { buildRenderGraph } from './renderGraph';
 import { captionFont, isCustomFontId } from './edit/fonts';
-import { logoRect, OUTPUT_SIZES, resolveLayout, type ResolvedLayout } from './edit/layout';
+import { defaultCaptionPosition, framePanels, logoRect, OUTPUT_SIZES, resolveLayout, type ResolvedLayout } from './edit/layout';
 import {
   applyReframe,
   keptRanges,
@@ -14,7 +14,7 @@ import {
   outputDuration,
   outputWords,
 } from './edit/timeline';
-import type { ClipEdit, ClipEditorData, SplitHalf } from './edit/types';
+import type { ClipEdit, ClipEditorData } from './edit/types';
 
 export interface RenderResult {
   layout: ResolvedLayout;
@@ -26,9 +26,9 @@ export interface RenderResult {
 
 /**
  * Render one clip as edited, in a single ffmpeg pass: read [start,end] of
- * the source, frame it (follow the speaker, split screen or the whole
- * frame) in the chosen format, cut out removed words and pauses, and burn
- * in the captions and title. The pipeline's first render goes through here
+ * the source, frame it (follow the speaker, split screen, facecam, screen,
+ * group or the whole frame) in the chosen format, cut out removed words
+ * and pauses, and burn in the captions and title. The pipeline's first render goes through here
  * too, so a clip opened in the editor and rendered unchanged comes out the
  * same.
  */
@@ -50,6 +50,14 @@ export async function renderClipEdit(opts: {
   if (kept.length === 0) throw new Error('Hela klippet är bortklippt, det finns inget kvar att rendera.');
   const duration = outputDuration(kept);
   const length = edit.end - edit.start;
+  const panels = framePanels({
+    layout,
+    source: data.source,
+    out,
+    analysis: data.analysis,
+    swap: edit.splitSwap,
+    panelSize: edit.panelSize,
+  });
 
   fs.mkdirSync(workDir, { recursive: true });
   const assPath = path.join(workDir, `${name}.ass`);
@@ -61,7 +69,7 @@ export async function renderClipEdit(opts: {
       captions: edit.captions,
       title: edit.title,
       out,
-      layout,
+      captionY: defaultCaptionPosition(layout, edit.aspect, panels),
       aspect: edit.aspect,
     }),
     'utf-8',
@@ -70,17 +78,8 @@ export async function renderClipEdit(opts: {
   // Framing keyframes are source times; ffmpeg's t starts at 0 at `start`.
   const auto = data.analysis?.keyframes ?? [];
   const keyframes = keyframesForRange(applyReframe(auto, edit.reframe), edit.start, edit.end);
-  let split: { top: SplitHalf; bottom: SplitHalf } | undefined;
-  if (layout === 'split' && data.analysis?.split) {
-    const onClip = (half: SplitHalf): SplitHalf => ({
-      ...half,
-      keyframes: keyframesForRange(half.keyframes, edit.start, edit.end),
-    });
-    const { top, bottom } = data.analysis.split;
-    split = edit.splitSwap
-      ? { top: onClip(bottom), bottom: onClip(top) }
-      : { top: onClip(top), bottom: onClip(bottom) };
-  }
+  // The parts of a split screen, facecam, screen or group layout, on the clip's timeline.
+  const parts = panels?.map((p) => ({ ...p, keyframes: keyframesForRange(p.keyframes, edit.start, edit.end) }));
 
   // One of your fonts: libass gets a folder with just that font, so no
   // font that comes with the app can have the same name.
@@ -98,7 +97,7 @@ export async function renderClipEdit(opts: {
     out,
     layout,
     keyframes,
-    split,
+    panels: parts,
     kept: kept.map((r) => ({ start: r.start - edit.start, end: r.end - edit.start })),
     length,
     hasAudio: data.source.hasAudio,

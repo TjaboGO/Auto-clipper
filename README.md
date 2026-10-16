@@ -12,7 +12,9 @@ och appen:
 4. Klipper ut varje ögonblick, beskär det till stående 9:16-format och följer den som pratar i
    bild (ansiktsspårning med OpenCV). Pratar två personer i snabb växling delas bilden istället, med
    en person upptill och en nedtill. Syns inga ansikten följer bilden det som rör sig, till exempel
-   bollen
+   bollen. Spel med en facecam får kameran upptill och spelet nedtill, en skärminspelning med
+   webbkamera får skärmen upptill och ansiktet nedtill, och 3-4 personer som pratar om vartannat
+   får var sin ruta
 5. Bränner in animerade texter i CapCut/TikTok-stil, några ord i taget med ordet som sägs just nu
    i guld. Whisper lyssnar på varje klipp så att orden lyser upp exakt när de sägs, och klippen
    börjar och slutar på riktiga ordgränser
@@ -29,6 +31,8 @@ och appen:
    logga i ett hörn, och "Min stil" som sparar hur dina klipp ska se ut och används för nya jobb
 10. Hämtar YouTube-videor även när YouTube vill att man är inloggad, med cookies från ditt konto,
     och visar hur långt nedladdningen har kommit
+11. Låter dig välja AI-modell per steg: en billig för att lyssna, den bästa för att välja klipp.
+    Klippvalet kan också gå via OpenRouter, så du kan använda vilken modell som helst där
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -103,6 +107,15 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   Haar-detektor, som bara följer det största ansiktet. Finns inga ansikten, eller bara små (som en
   facecam i ett hörn), följer beskärningen rörelsen istället: kamerans egen rörelse räknas bort med
   optiskt flöde, och bilden panorerar mjukt dit det händer mest.
+  Syns en ensam person som står still letar skriptet efter en webbkamera-ruta runt hen: raka
+  kanter som ligger på samma ställe genom hela klippet och slutar vid rutans hörn (linjer i rummet
+  bakom personen, en hylla eller en webbläsares verktygsfält, fortsätter förbi hörnen och räknas
+  inte). En ram runt kameran hoppas över. Rör sig bilden runt rutan är det spel, annars en skärm,
+  men bara om det finns något att se på den (text, knappar). En ruta på en tom bakgrund är ingen
+  skärminspelning. Hittas ingen tydlig ruta kan du ändå välja layouten, då med en uppskattad ruta
+  runt ansiktet. Det som rör sig i rutan (personen) räknas inte som action när bilden följer
+  spelet. Är 3-4 personer med nästan hela tiden blir de en grupp, i ordning från vänster till
+  höger, och tar de snabba turer väljs grupp-layouten automatiskt.
 - `scripts/word_timing.py` + `src/lib/wordTiming.ts` - när Gemini valt klippen lyssnar Whisper
   (faster-whisper) på vart och ett och säger när varje ord sägs. Orden matchas mot Geminis text
   (felhörda, missade och extra ord hanteras, liksom sammansatta ord som delats olika), och
@@ -125,7 +138,10 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   plats som i förhandsvisningen.
 - `src/app/settings` - inställningssidan: Min stil, egna typsnitt, logga och YouTube-cookies.
 - `src/lib/render.ts` + `src/lib/renderGraph.ts` - renderar ett klipp i ett enda ffmpeg-kommando:
-  beskärning (följ talaren, split screen, eller hela bilden med suddig bakgrund) i valt format
+  beskärning (följ talaren, split screen, spel med facecam, skärm med ansikte, grupp, eller hela
+  bilden med suddig bakgrund) i valt format. Layouter med flera delar beskär varje del för sig och
+  sätter ihop dem med `xstack`, med samma mått som förhandsvisningen ritar (`framePanels` i
+  `src/lib/edit/layout.ts`)
   (9:16, 1:1, 4:5, 16:9), bortklippta ord och pauser (bilden väljs ut och flyttas ihop, ljudet
   klipps med korta toningar så skarvarna inte klickar) och texterna. Pipelinen och redigeraren
   renderar på samma sätt, så ett oredigerat klipp blir likadant om det renderas om.
@@ -201,8 +217,14 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   överallt (publik, konfetti, snabba kameraåkningar) kan den välja fel. Då kan du beskära själv i
   redigeraren.
 - **Redigeraren har inte allt som Opus har.** Det finns ingen B-roll, musik, emojis,
-  övergångar eller publicering direkt till TikTok och YouTube. Split screen-halvorna följer
-  personerna automatiskt och kan bara byta plats, inte beskäras för hand. Loggan är en stillbild.
+  övergångar eller publicering direkt till TikTok och YouTube. Delarna i split screen, facecam,
+  skärm och grupp följer automatiskt och kan byta plats och storlek, men inte beskäras för hand.
+  Loggan är en stillbild.
+- **Facecam och grupp bygger på ansiktena.** Webbkamera-rutan hittas från raka, fasta kanter, så en
+  rund kamera eller en person som är utklippt rakt på spelet (greenscreen) får en uppskattad ruta.
+  En liten webbkamera blir suddig när den förstoras till halva bilden, det går inte att undvika.
+  Grupp-layouten tar bara med personer som syns nästan hela klippet, och högst fyra.
+  Layouterna med flera delar finns inte i 16:9 (utom grupp).
 - **Egna typsnitt:** bara .ttf och .otf (inte WOFF eller samlingar). Typsnitt med väldigt hög
   radhöjd ger en hög ruta i Box-stilen, så som libass ritar den (förhandsvisningen visar samma
   sak). Använd bara typsnitt du har rätt att använda i video.
@@ -218,9 +240,15 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
 
 ## Miljövariabler
 
-Se `.env.example`. Den viktiga är `GEMINI_API_KEY`. `GEMINI_MODEL` är `gemini-3.5-flash` som
+Se `.env.example`. Den viktiga är `GEMINI_API_KEY`. `GEMINI_MODEL` är `gemini-3.8-flash` som
 standard. Google pensionerar gamla modeller med jämna mellanrum, så byt till en aktuell om jobben
-börjar faila med att modellen inte hittas. `WORD_TIMING` och `WHISPER_MODEL` styr ordtimingen, och
+börjar faila med att modellen inte hittas. Vill du ha olika modeller per steg finns
+`GEMINI_TRANSCRIBE_MODEL` (lyssna på ljudet), `GEMINI_VISION_MODEL` (titta på videon) och
+`GEMINI_HIGHLIGHT_MODEL` (välja klippen). Tomma betyder `GEMINI_MODEL`. Med
+`HIGHLIGHT_PROVIDER=openrouter`, `OPENROUTER_API_KEY` och `OPENROUTER_MODEL` (namnet som det står
+på OpenRouters modellsida, till exempel `google/gemini-3.8-flash`) går klippvalet via OpenRouter
+istället. Bara texten skickas dit, ljud och video går fortfarande till Gemini, så
+`GEMINI_API_KEY` behövs ändå. `WORD_TIMING` och `WHISPER_MODEL` styr ordtimingen, och
 `SOURCE_RETENTION_DAYS` hur länge källvideon sparas för redigeraren. `YTDLP_COOKIES` kan peka på en
 egen cookies.txt för YouTube (annars sparas cookies från inställningssidan i
 `storage/youtube-cookies.txt`).
@@ -244,6 +272,10 @@ ordtiming, `yt-dlp` för YouTube-nedladdning.
    när det inte finns några ansikten~~ (klar)
 6. ~~YouTube-cookies, begripliga fel och nedladdningsförlopp. Fler typsnitt, egna typsnitt, logga
    och Min stil~~ (klar)
-7. Fler layouter: spel med facecam ovanpå varandra, skärmdelning med ansikte, och 3-4 personer.
-   Välja AI-modell per steg (en billig för transkribering, den bästa för klippvalet) och byta
-   standardmodell till en nyare Gemini Flash. OpenRouter som valfri leverantör för klippvalet.
+7. ~~Fler layouter: spel med facecam ovanpå varandra, skärmdelning med ansikte, och 3-4 personer.
+   Välja AI-modell per steg och byta standardmodell till Gemini 3.8 Flash. OpenRouter som valfri
+   leverantör för klippvalet~~ (klar)
+8. Lösenord för appen, översatta texter, SRT-export och alla klipp som ZIP
+9. Emojis i texterna, fler textanimationer och automatisk zoom
+10. B-roll (till exempel från Pexels med din egen nyckel) och bakgrundsmusik
+11. Publicera direkt till YouTube, och export till Premiere och DaVinci Resolve
