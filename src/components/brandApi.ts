@@ -1,7 +1,7 @@
 // The browser side of the brand kit API (fonts, logo, "Min stil") and the
 // YouTube cookies, shared by the editor and the settings page.
 import type { CustomFont } from '@/lib/edit/fonts';
-import type { BrandInfo, BrandStyle, MusicTrack } from '@/lib/edit/types';
+import type { BrandInfo, BrandStyle, BrollVideo, MusicTrack } from '@/lib/edit/types';
 
 export interface CookieStatus {
   present: boolean;
@@ -89,3 +89,37 @@ export const deleteMusic = (id: string) =>
   );
 
 export const musicUrl = (id: string) => `/api/brand/music/${encodeURIComponent(id)}`;
+
+export interface PexelsStatus {
+  configured: boolean;
+  fromEnv: boolean;
+}
+
+export const fetchPexels = () =>
+  call<{ pexels: PexelsStatus }>('/api/pexels', { cache: 'no-store' }, 'Kunde inte läsa Pexels-inställningen.').then((b) => b.pexels);
+
+export const savePexelsKey = (key: string) =>
+  call<{ pexels: PexelsStatus }>(
+    '/api/pexels',
+    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) },
+    'Kunde inte spara nyckeln.',
+  ).then((b) => b.pexels);
+
+export const deletePexelsKey = () =>
+  call<{ pexels: PexelsStatus }>('/api/pexels', { method: 'DELETE' }, 'Kunde inte ta bort nyckeln.').then((b) => b.pexels);
+
+export const searchBroll = (q: string, orientation: string) =>
+  call<{ videos: BrollVideo[] }>(
+    `/api/broll/search?q=${encodeURIComponent(q)}&orientation=${orientation}`,
+    { cache: 'no-store' },
+    'Sökningen på Pexels misslyckades.',
+  ).then((b) => b.videos);
+
+export const downloadBroll = (video: BrollVideo) =>
+  call<{ video: BrollVideo }>(
+    '/api/broll/download',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ video }) },
+    'Kunde inte hämta videon.',
+  ).then((b) => b.video);
+
+export const brollUrl = (file: string) => `/api/broll/${encodeURIComponent(file)}`;

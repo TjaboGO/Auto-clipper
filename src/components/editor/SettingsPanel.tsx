@@ -1,7 +1,17 @@
 'use client';
 
-import { useRef, useState, type ReactNode } from 'react';
-import { logoUrl, saveStyle, uploadFont, uploadLogo, uploadMusic } from '@/components/brandApi';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  downloadBroll,
+  fetchPexels,
+  logoUrl,
+  saveStyle,
+  searchBroll,
+  uploadFont,
+  uploadLogo,
+  uploadMusic,
+  type PexelsStatus,
+} from '@/components/brandApi';
 import { AspectIcon, CaptionPresetPicker } from '@/components/CaptionStyleParts';
 import { FileButton } from '@/components/FileButton';
 import { CAPTION_FONTS, cssFontFamily, type CaptionFont } from '@/lib/edit/fonts';
@@ -14,12 +24,14 @@ import {
   splitAllowed,
   type ResolvedLayout,
 } from '@/lib/edit/layout';
-import { captionPreset, DEFAULT_MUSIC_VOLUME, LOGO_CORNERS, presetCaptions, withStyle } from '@/lib/edit/presets';
+import { BROLL_DURATION, captionPreset, DEFAULT_MUSIC_VOLUME, LOGO_CORNERS, presetCaptions, withStyle } from '@/lib/edit/presets';
 import { CAPTION_LANGUAGES, captionLanguage } from '@/lib/edit/translation';
 import { ZOOM_LEVELS } from '@/lib/edit/zoom';
 import type {
   AspectRatio,
   BrandInfo,
+  BrollItem,
+  BrollVideo,
   CaptionSettings,
   ClipEdit,
   FramingAnalysis,
@@ -30,7 +42,7 @@ import type {
 } from '@/lib/edit/types';
 import { formatTime } from './format';
 
-type Tab = 'text' | 'layout' | 'title' | 'logo' | 'sound';
+type Tab = 'text' | 'layout' | 'title' | 'logo' | 'sound' | 'broll';
 
 const CORNER_LABELS: Record<LogoCorner, string> = {
   'top-left': 'Uppe till vänster',
@@ -63,6 +75,12 @@ interface SettingsPanelProps {
   onTranslate: (lang: string) => Promise<void>;
   /** Let the AI put emojis on words; returns how many. */
   onSuggestEmojis: () => Promise<number>;
+  /** The word at the playhead (where new B-roll starts), or null. */
+  anchor: { id: string; text: string } | null;
+  /** The transcript words, for naming where B-roll starts. */
+  wordText: (id: string) => string;
+  /** Let the AI add B-roll; returns how many. */
+  onSuggestBroll: () => Promise<number>;
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -184,11 +202,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const camPossible = !!facecam && splitAllowed(edit.aspect);
   const groupSize = props.analysis?.group?.length ?? 0;
   const { brand, onBrand } = props;
-  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | null>(null);
+  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | 'broll' | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const setLogo = (patch: Partial<LogoSettings>, key?: string) => set({ ...edit, logo: { ...edit.logo, ...patch } }, key);
 
-  async function run(what: 'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music', job: () => Promise<string | null>) {
+  async function run(what: 'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | 'broll', job: () => Promise<string | null>) {
     setBusy(what);
     setMessage(null);
     try {
@@ -230,6 +248,26 @@ export function SettingsPanel(props: SettingsPanelProps) {
       return 'Sparad som Min stil. Välj Min stil när du skapar klipp, så får de den här looken.';
     });
 
+  const [pexels, setPexels] = useState<PexelsStatus | null>(null);
+  const [brollQuery, setBrollQuery] = useState('');
+  const [brollResults, setBrollResults] = useState<BrollVideo[] | null>(null);
+  useEffect(() => {
+    if (tab === 'broll' && !pexels) fetchPexels().then(setPexels).catch(() => setPexels({ configured: false, fromEnv: false }));
+  }, [tab, pexels]);
+  const searchPexels = () =>
+    run('broll', async () => {
+      setBrollResults(await searchBroll(brollQuery, edit.aspect === '16:9' ? 'landscape' : edit.aspect === '1:1' ? 'square' : 'portrait'));
+      return null;
+    });
+  const addBroll = (video: BrollVideo) =>
+    run('broll', async () => {
+      if (!props.anchor) throw new Error('Spola till ett ord i klippet där videon ska börja.');
+      const ready = await downloadBroll(video);
+      set({ ...edit, broll: [...edit.broll, { video: ready, wordId: props.anchor.id, duration: BROLL_DURATION.default, query: brollQuery }] });
+      return `Videon visas från "${props.anchor.text}".`;
+    });
+  const setBroll = (i: number, patch: Partial<BrollItem>, key?: string) =>
+    set({ ...edit, broll: edit.broll.map((b, k) => (k === i ? { ...b, ...patch } : b)) }, key);
   const tracks = brand.music ?? [];
   const addMusic = (file: File) =>
     run('music', async () => {
@@ -343,6 +381,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
             ['title', 'Rubrik'],
             ['logo', 'Logga'],
             ['sound', 'Ljud'],
+            ['broll', 'B-roll'],
           ] as [Tab, string][]
         ).map(([id, label]) => (
           <button
@@ -831,6 +870,127 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 <p className="text-xs text-gray-400">
                   Musiken sänks automatiskt när någon pratar, och tonas in och ut. I förhandsvisningen hörs den utan
                   den sänkningen.
+                </p>
+              </>
+            )}
+          </>
+        )}
+
+        {tab === 'broll' && (
+          <>
+            {pexels && !pexels.configured ? (
+              <p className="text-sm text-gray-300">
+                B-roll hämtas från Pexels, gratis videoklipp. Lägg in en nyckel på{' '}
+                <a href="/settings#broll" className="text-accent-300 hover:text-accent-400">
+                  inställningssidan
+                </a>{' '}
+                först.
+              </p>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={busy === 'broll'}
+                  onClick={() =>
+                    run('broll', async () => {
+                      const count = await props.onSuggestBroll();
+                      return `AI:n lade till ${count} ${count === 1 ? 'video' : 'videor'}.`;
+                    })
+                  }
+                  className="w-full rounded-md px-3 py-2 text-sm font-medium bg-base-800 hover:bg-base-700 disabled:opacity-50"
+                >
+                  {busy === 'broll' ? 'Arbetar ...' : 'Föreslå B-roll med AI'}
+                </button>
+                <Section title="Sök själv">
+                  <form
+                    className="flex gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (brollQuery.trim()) searchPexels();
+                    }}
+                  >
+                    <input
+                      value={brollQuery}
+                      onChange={(e) => setBrollQuery(e.target.value)}
+                      placeholder="Till exempel: city night"
+                      aria-label="Sök B-roll"
+                      className="min-w-0 flex-1 rounded-md bg-base-800 px-2 py-1.5 text-sm"
+                    />
+                    <button type="submit" disabled={busy === 'broll' || !brollQuery.trim()} className="rounded-md px-3 py-1.5 text-sm bg-base-800 hover:bg-base-700 disabled:opacity-50">
+                      Sök
+                    </button>
+                  </form>
+                  <p className="text-xs text-gray-400">
+                    {props.anchor ? `Läggs till från ordet "${props.anchor.text}" (där uppspelningen står).` : 'Spola till ett ord i klippet där videon ska börja.'}
+                  </p>
+                  {brollResults && (
+                    brollResults.length === 0 ? (
+                      <p className="text-xs text-gray-400">Inga träffar. Prova andra ord, gärna på engelska.</p>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {brollResults.map((v) => (
+                          <button
+                            key={v.id}
+                            type="button"
+                            disabled={busy === 'broll' || !props.anchor}
+                            onClick={() => addBroll(v)}
+                            className="relative aspect-[9/16] overflow-hidden rounded bg-base-800 disabled:opacity-50"
+                            title={`${v.duration} s, av ${v.author}`}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={v.thumb} alt="" className="h-full w-full object-cover" />
+                            <span className="absolute bottom-0.5 right-1 text-[10px] text-white drop-shadow">{v.duration} s</span>
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </Section>
+                {edit.broll.length > 0 && (
+                  <Section title="I klippet">
+                    <ul className="space-y-2">
+                      {edit.broll.map((b, i) => (
+                        <li key={`${b.video.id}-${b.wordId}`} className="rounded-md bg-base-900 p-2 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={b.video.thumb} alt="" className="h-12 w-8 shrink-0 rounded object-cover" />
+                            <div className="min-w-0 flex-1 text-xs">
+                              <p className="truncate">Från &quot;{props.wordText(b.wordId)}&quot;</p>
+                              <p className="truncate text-gray-400">
+                                av{' '}
+                                <a href={b.video.authorUrl} target="_blank" rel="noreferrer" className="hover:text-white">
+                                  {b.video.author}
+                                </a>
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => set({ ...edit, broll: edit.broll.filter((_, k) => k !== i) })}
+                              className="text-xs text-gray-400 hover:text-white"
+                            >
+                              Ta bort
+                            </button>
+                          </div>
+                          <Slider
+                            label="Längd"
+                            value={b.duration}
+                            min={BROLL_DURATION.min}
+                            max={BROLL_DURATION.max}
+                            step={0.5}
+                            format={(v) => `${v} s`}
+                            onChange={(v, key) => setBroll(i, { duration: v }, key)}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </Section>
+                )}
+                <p className="text-xs text-gray-500">
+                  Videor från{' '}
+                  <a href="https://www.pexels.com" target="_blank" rel="noreferrer" className="hover:text-white underline">
+                    Pexels
+                  </a>
+                  . Videon fyller bilden, ljudet från klippet hörs som vanligt.
                 </p>
               </>
             )}

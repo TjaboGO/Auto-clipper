@@ -11,13 +11,17 @@ import {
   fetchBrand,
   fetchCookies,
   deleteMusic,
+  deletePexelsKey,
+  fetchPexels,
   logoUrl,
   musicUrl,
   saveCookies,
+  savePexelsKey,
   uploadFont,
   uploadLogo,
   uploadMusic,
   type CookieStatus,
+  type PexelsStatus,
 } from '@/components/brandApi';
 import { StyleSample } from '@/components/CaptionStyleParts';
 import { FileButton } from '@/components/FileButton';
@@ -66,6 +70,8 @@ const date = (iso?: string) =>
 export default function SettingsPage() {
   const [brand, setBrand] = useState<BrandInfo | null>(null);
   const [cookies, setCookies] = useState<CookieStatus | null>(null);
+  const [pexels, setPexels] = useState<PexelsStatus | null>(null);
+  const [pexelsKey, setPexelsKey] = useState('');
   const [cookieText, setCookieText] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean; section: string } | null>(null);
@@ -82,6 +88,9 @@ export default function SettingsPage() {
       .catch((err) => setMessage({ text: err.message, error: true, section: 'top' }));
     fetchCookies()
       .then(setCookies)
+      .catch(() => undefined);
+    fetchPexels()
+      .then(setPexels)
       .catch(() => undefined);
   }, []);
 
@@ -290,6 +299,55 @@ export default function SettingsPage() {
           </Card>
         </>
       )}
+
+      <Card
+        id="broll"
+        title="B-roll från Pexels"
+        intro="Gratis videoklipp att lägga över dina klipp, sökta och valda av AI:n eller av dig i redigeraren. Skapa en gratis nyckel på pexels.com/api och klistra in den här."
+      >
+        {pexels?.fromEnv ? (
+          <p className="text-sm text-gray-300">Nyckeln kommer från PEXELS_API_KEY i serverns inställningar.</p>
+        ) : pexels?.configured ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-sm text-accent-300 mr-auto">En nyckel är sparad.</p>
+            <SmallButton danger disabled={busy === 'broll'} onClick={() => run('broll', async () => {
+              setPexels(await deletePexelsKey());
+              return 'Nyckeln är borttagen.';
+            })}>
+              Ta bort
+            </SmallButton>
+          </div>
+        ) : (
+          <form
+            className="flex flex-wrap gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              run('broll', async () => {
+                setPexels(await savePexelsKey(pexelsKey));
+                setPexelsKey('');
+                return 'Nyckeln är sparad. Nu finns B-roll i redigeraren.';
+              });
+            }}
+          >
+            <input
+              type="password"
+              value={pexelsKey}
+              onChange={(e) => setPexelsKey(e.target.value)}
+              placeholder="Pexels API-nyckel"
+              aria-label="Pexels API-nyckel"
+              autoComplete="off"
+              className="min-w-0 flex-1 rounded-lg bg-base-800 px-3 py-2 text-sm"
+            />
+            <button type="submit" disabled={busy === 'broll' || !pexelsKey.trim()} className="rounded-lg bg-accent-500 hover:bg-accent-400 disabled:opacity-50 px-4 py-2 text-sm font-semibold">
+              Spara
+            </button>
+          </form>
+        )}
+        <p className="text-xs text-gray-500">
+          Pexels-videor är gratis att använda. Den som filmat krediteras i redigeraren och i klipp.txt.
+        </p>
+        {note('broll')}
+      </Card>
 
       <Card
         id="youtube"

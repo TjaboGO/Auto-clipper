@@ -16,6 +16,8 @@ import { DEFAULT_MUSIC_VOLUME, defaultEdit, withStyle } from './edit/presets';
 import { brandInfo, brandStyle, musicTrack } from './brand';
 import { clipWords } from './edit/timeline';
 import { captionLanguage, sentencesToTranslate } from './edit/translation';
+import { suggestClipBroll } from './brollSuggest';
+import { pexelsStatus } from './pexels';
 import type { SourceInfo } from './edit/types';
 import {
   clipLength,
@@ -239,6 +241,12 @@ async function renderSuggestions(opts: {
   const language = captionLanguage(options.translate);
   const translated: Record<string, string> = {};
   let translationFailed = false;
+  // B-roll needs a Pexels key; without one (or if Pexels fails) the clips go without, said once.
+  let brollFailed = false;
+  if (options.broll && !pexelsStatus().configured) {
+    brollFailed = true;
+    logProgress(jobId, 'rendering', 'B-roll hoppas över: lägg in en Pexels-nyckel på inställningssidan.');
+  }
 
   const outDir = jobOutputDir(jobId);
   const failures: string[] = [];
@@ -287,6 +295,14 @@ async function renderSuggestions(opts: {
       }
       // Nobody talks in the clip: show its title instead of empty captions.
       if (spoken.length === 0) edit.title = { ...edit.title, enabled: true, duration: 'all' };
+      if (options.broll && spoken.length > 0 && !brollFailed) {
+        try {
+          edit.broll = await suggestClipBroll(data.words, edit);
+        } catch (err) {
+          brollFailed = true;
+          logProgress(jobId, 'rendering', `Kunde inte lägga till B-roll (${errorMessage(err).split('\n')[0]}). Klippen blir utan.`);
+        }
+      }
       if (language && spoken.length > 0 && !translationFailed) {
         const sentences = sentencesToTranslate(data.words, edit);
         const missing = sentences.filter((s) => !(String(s.id) in translated));

@@ -34,6 +34,13 @@ function formatSeconds(seconds: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+/** Who filmed the clip's stock video (Pexels asks for credit). */
+function brollCredits(jobId: string, clipId: string): string[] {
+  const broll = readRenderedEdit(jobId, clipId)?.broll ?? [];
+  const people = [...new Map(broll.map((b) => [b.video.authorUrl, b.video])).values()];
+  return people.length ? [`  B-roll från Pexels: ${people.map((v) => `${v.author} (${v.pageUrl})`).join(', ')}`] : [];
+}
+
 /** The text file in the ZIP: what to post with each clip. */
 export function clipsSummary(job: Job): string {
   const title = job.source.type === 'youtube' ? job.source.title || job.source.url : job.source.originalName;
@@ -46,6 +53,7 @@ export function clipsSummary(job: Job): string {
       `  Längd: ${formatSeconds(clip.durationSec)} (från ${formatSeconds(clip.start)} i videon)`,
       `  Viralitet: ${clip.viralityScore}/100`,
       ...(language ? [`  Texter på: ${language.label.toLowerCase()}`] : []),
+      ...brollCredits(job.id, clip.id),
       `  Bildtext: ${clip.caption}`,
       `  Hashtags: ${clip.hashtags.map((h) => `#${h.replace(/^#/, '')}`).join(' ')}`,
       `  Varför: ${clip.reason}`,

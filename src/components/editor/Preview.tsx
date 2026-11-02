@@ -8,6 +8,7 @@ import type { ClipEdit, LogoImage, TimeRange } from '@/lib/edit/types';
 import { drawCaptions, drawCropView, drawEmoji, drawFrame, drawLogo, drawTitle, type FrameSpec } from './draw';
 import { emojiFile, emojiPop, type EmojiShow } from '@/lib/edit/emoji';
 import { zoomedAt } from '@/lib/edit/zoom';
+import { coverRect, type BrollShow } from '@/lib/edit/broll';
 import { formatTime } from './format';
 import type { PreviewInfo } from './types';
 
@@ -46,6 +47,8 @@ interface PreviewProps {
   zoom: { factor: number; segments: TimeRange[] };
   /** Background music to play along (looped), or null. */
   music: { url: string; volume: number; duration: number } | null;
+  /** Stock video over parts of the clip (clip timeline). */
+  broll: (BrollShow & { url: string })[];
 }
 
 /**
@@ -65,6 +68,18 @@ function syncMusic(audio: HTMLAudioElement | null, music: PreviewProps['music'],
   if (audio.paused) audio.play().catch(() => undefined);
 }
 
+/** Keep a B-roll video at `at` seconds into it (null: not on screen), playing along with the clip. */
+function syncBroll(clip: HTMLVideoElement, at: number | null, playing: boolean): void {
+  if (at === null) {
+    if (!clip.paused) clip.pause();
+    return;
+  }
+  const target = clip.duration > 0 ? at % clip.duration : at;
+  if (Math.abs(clip.currentTime - target) > (playing ? 0.3 : 0.08)) clip.currentTime = target;
+  if (playing && clip.paused) clip.play().catch(() => undefined);
+  if (!playing && !clip.paused) clip.pause();
+}
+
 export function Preview(props: PreviewProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -79,8 +94,9 @@ export function Preview(props: PreviewProps) {
   const logoImage = useRef<HTMLImageElement | null>(null);
   const [logoLoads, setLogoLoads] = useState(0);
   const musicRef = useRef<HTMLAudioElement>(null);
+  const brollVideos = useRef(new Map<string, HTMLVideoElement>());
   const emojiImages = useRef(new Map<string, HTMLImageElement>());
-  const [emojiLoads, setEmojiLoads] = useState(0);
+  const [assetLoads, setAssetLoads] = useState(0);
 
   const sourceTime = () => propsRef.current.windowStart + (videoRef.current?.currentTime ?? 0);
 
@@ -100,6 +116,16 @@ export function Preview(props: PreviewProps) {
     syncMusic(musicRef.current, p.music, video.paused || o === null ? null : o);
     drawFrame(ctx, video, p.spec, t, o !== null && zoomedAt(p.zoom.segments, o) ? p.zoom.factor : 1);
     if (o !== null) {
+      for (const show of p.broll) {
+        const clip = brollVideos.current.get(show.url);
+        if (!clip) continue;
+        const on = o >= show.start && o < show.end;
+        syncBroll(clip, on ? o - show.start : null, !video.paused);
+        if (on && clip.readyState >= 2 && clip.videoWidth) {
+          const r = coverRect({ width: clip.videoWidth, height: clip.videoHeight }, p.spec.out);
+          ctx.drawImage(clip, r.x, r.y, r.w, r.h, 0, 0, canvas.width, canvas.height);
+        }
+      }
       if (p.edit.logo.enabled && p.logo && logoImage.current) {
         drawLogo(ctx, logoImage.current, logoRect(p.spec.out, p.logo, p.edit.logo), p.edit.logo.opacity, k);
       }
@@ -227,13 +253,28 @@ export function Preview(props: PreviewProps) {
     return () => video.removeEventListener('loadedmetadata', start);
   }, [props.preview.url, seek]);
 
+  // A hidden video per B-roll clip, made once; seeking one redraws the frame.
+  useEffect(() => {
+    for (const show of props.broll) {
+      if (brollVideos.current.has(show.url)) continue;
+      const clip = document.createElement('video');
+      clip.muted = true;
+      clip.playsInline = true;
+      clip.preload = 'auto';
+      clip.addEventListener('seeked', () => setAssetLoads((n) => n + 1));
+      clip.addEventListener('loadeddata', () => setAssetLoads((n) => n + 1));
+      clip.src = show.url;
+      brollVideos.current.set(show.url, clip);
+    }
+  }, [props.broll]);
+
   // The emoji images the clip uses, each loaded once.
   useEffect(() => {
     for (const show of props.emojis) {
       const file = emojiFile(show.emoji);
       if (emojiImages.current.has(file)) continue;
       const image = new Image();
-      image.onload = () => setEmojiLoads((n) => n + 1);
+      image.onload = () => setAssetLoads((n) => n + 1);
       image.src = `/api/emoji/${file}`;
       emojiImages.current.set(file, image);
     }
@@ -255,7 +296,7 @@ export function Preview(props: PreviewProps) {
   // Redraw whenever anything that shows changes.
   useEffect(() => {
     draw();
-  }, [draw, props.spec, props.edit, props.pages, props.metrics, props.cropMode, props.fontsReady, props.logo, logoLoads, props.emojis, emojiLoads, size]);
+  }, [draw, props.spec, props.edit, props.pages, props.metrics, props.cropMode, props.fontsReady, props.logo, logoLoads, props.emojis, assetLoads, props.broll, size]);
 
   // If the start of the clip was just cut away (or moved later), don't sit
   // on something that's no longer in it: go to the new first frame.

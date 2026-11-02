@@ -25,7 +25,8 @@ import {
 import type { BrandInfo, ClipEdit, WordOverride } from '@/lib/edit/types';
 import type { RenderedClip } from '@/lib/types';
 import type { FrameSpec } from './draw';
-import { musicUrl } from '@/components/brandApi';
+import { brollUrl, musicUrl } from '@/components/brandApi';
+import { brollShows } from '@/lib/edit/broll';
 import { formatTime } from './format';
 import { previewFormat } from './previewFormat';
 import { Preview, type PreviewHandle } from './Preview';
@@ -150,6 +151,10 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
     const track = edit.music && brand.music?.find((t) => t.id === edit.music?.track);
     return track && edit.music ? { url: musicUrl(track.id), volume: edit.music.volume, duration: track.duration } : null;
   }, [edit.music, brand.music]);
+  const brollPreview = useMemo(
+    () => brollShows(edit, spokenWords, duration).map((s) => ({ ...s, url: brollUrl(s.video.file) })),
+    [edit, spokenWords, duration],
+  );
   const titleM = useMemo(
     () => titleMetrics(edit.captions, edit.title.duration, out, edit.aspect, duration),
     [edit.captions, edit.title.duration, out, edit.aspect, duration],
@@ -312,6 +317,30 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
 
   const toggleHidden = () => set(withOverrides(edit, selectedIds, (o) => ({ ...o, hidden: !allHidden })));
   const toggleEmphasis = () => set(withOverrides(edit, selectedIds, (o) => ({ ...o, emphasis: !allEmphasis })));
+  // New B-roll starts at the word under the playhead (or the next one said in the clip).
+  const anchor = useMemo(() => {
+    const word = words.find((w) => w.end > time && w.start >= edit.start - 0.01 && w.start < edit.end && !removed.has(w.id));
+    return word ? { id: word.id, text: edit.words[word.id]?.text ?? word.text } : null;
+  }, [words, time, edit.start, edit.end, edit.words, removed]);
+  const wordText = useCallback(
+    (id: string) => {
+      const word = words.find((w) => w.id === id);
+      return word ? (editRef.current.words[id]?.text ?? word.text) : '?';
+    },
+    [words],
+  );
+  const suggestBroll = useCallback(async () => {
+    const res = await fetch(`/api/jobs/${jobId}/clips/${clip.id}/broll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ edit: editRef.current }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? 'Kunde inte hämta B-roll.');
+    set({ ...editRef.current, broll: [...editRef.current.broll, ...body.items] });
+    return body.items.length as number;
+  }, [jobId, clip.id, set]);
+
   // A new selection closes the emoji picker.
   useEffect(() => setEmojiPicker(false), [from, to]);
   const setEmoji = (emoji: string | undefined) => {
@@ -620,6 +649,7 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             emojiRect={emojiRect(metrics)}
             zoom={zoom}
             music={musicPreview}
+            broll={brollPreview}
           />
         </section>
 
@@ -641,6 +671,9 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             sentences={sentences}
             onTranslate={translate}
             onSuggestEmojis={suggestEmojis}
+            anchor={anchor}
+            wordText={wordText}
+            onSuggestBroll={suggestBroll}
           />
         </aside>
       </div>

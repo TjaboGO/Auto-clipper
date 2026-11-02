@@ -60,6 +60,8 @@ export interface JobOptions {
   zoom: ZoomLevel;
   /** One of your music tracks under every clip ("m-..."), or ''. */
   music: string;
+  /** Let the AI put stock video from Pexels over the clips (needs a Pexels key). */
+  broll: boolean;
 }
 
 export const MAX_TOPIC_LENGTH = 200;
@@ -79,6 +81,7 @@ export function defaultJobOptions(): JobOptions {
     emojis: false,
     zoom: 'off',
     music: '',
+    broll: false,
   };
 }
 
@@ -123,6 +126,7 @@ export function sanitizeJobOptions(raw: unknown): JobOptions {
     emojis: typeof raw.emojis === 'boolean' ? raw.emojis : defaults.emojis,
     zoom: pick(raw.zoom, ZOOM_LEVELS.map((l) => l.id), defaults.zoom),
     music: typeof raw.music === 'string' && /^m-[0-9a-f]{6,40}$/.test(raw.music) ? raw.music : defaults.music,
+    broll: typeof raw.broll === 'boolean' ? raw.broll : defaults.broll,
   };
 }
 

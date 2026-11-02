@@ -193,6 +193,7 @@ export function UploadForm() {
     options.emojis ? 'emojis' : null,
     options.zoom !== 'off' ? 'zoom' : null,
     options.music ? 'musik' : null,
+    options.broll ? 'B-roll' : null,
     options.visual === 'on' ? 'bildanalys' : options.visual === 'off' ? 'ingen bildanalys' : null,
     options.translate ? `texter på ${captionLanguage(options.translate)?.label.toLowerCase()}` : null,
     from || to ? `${from || '0:00'}-${to || 'slut'}` : null,
@@ -380,6 +381,18 @@ export function UploadForm() {
                 </select>
               </Field>
             )}
+            <label className="flex items-start justify-between gap-4 cursor-pointer">
+              <span>
+                <span className="block text-sm">B-roll</span>
+                <span className="block text-xs text-gray-400">AI:n lägger in passande videoklipp från Pexels. Kräver en Pexels-nyckel.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={options.broll}
+                onChange={(e) => set({ broll: e.target.checked })}
+                className="mt-1 h-4 w-4 accent-accent-500"
+              />
+            </label>
             <Field label="Texternas språk">
               <select
                 aria-label="Texternas språk"

@@ -54,6 +54,7 @@ function optionLabels(options?: JobOptions, watched?: boolean): string[] {
     options.emojis ? 'Emojis' : '',
     options.zoom && options.zoom !== 'off' ? 'Zoom' : '',
     options.music ? 'Musik' : '',
+    options.broll ? 'B-roll' : '',
     options.translate ? `Texter på ${captionLanguage(options.translate)?.label.toLowerCase() ?? options.translate}` : '',
     options.range ? `Del ${formatClock(options.range.start)}-${formatClock(options.range.end)}` : '',
   ].filter(Boolean);
