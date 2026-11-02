@@ -135,6 +135,8 @@ export interface ClipEdit {
   translation: CaptionTranslation | null;
   /** Automatic punch-in zooms (follow-the-speaker layout only), see edit/zoom.ts. */
   zoom: ZoomLevel;
+  /** Background music, or null. */
+  music: ClipMusic | null;
 }
 
 /** Translated captions: each transcript sentence (by its index) in another language. */
@@ -159,11 +161,32 @@ export interface LogoImage {
   version: string;
 }
 
+/** A music track you uploaded, for under the clips. */
+export interface MusicTrack {
+  /** "m-" + a hash of the file. */
+  id: string;
+  name: string;
+  /** The stored file (AAC in .m4a) in the brand kit. */
+  file: string;
+  /** Seconds. */
+  duration: number;
+  addedAt: string;
+}
+
+/** Background music under a clip: which of your tracks, and how loud. */
+export interface ClipMusic {
+  track: string;
+  /** 0.05-1: the music's level (it is turned down more while someone talks). */
+  volume: number;
+}
+
 /** Your brand kit, as the editor, upload form and settings page see it. */
 export interface BrandInfo {
   fonts: CustomFont[];
   logo: LogoImage | null;
   style: BrandStyle | null;
+  /** Missing in brand kits from before music. */
+  music?: MusicTrack[];
 }
 
 /** One transcript word as the editor sees it. */

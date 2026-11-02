@@ -77,6 +77,8 @@ export interface RenderGraphInput {
   emojis?: { input: number; rect: { x: number; y: number; size: number }; start: number; end: number }[];
   /** Punch-in zooms: the frame shown `factor` closer during `segments` (clip timeline, after the cuts). */
   zoom?: { factor: number; segments: TimeRange[] };
+  /** Background music: an audio input looped and cut to the clip's length, and its level. */
+  music?: { input: number; volume: number };
 }
 
 /** The video part of the graph up to the finished frame: crop, parts stacked together, or fit. */
@@ -185,13 +187,47 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
       `[base][logo]overlay=${rect.x}:${rect.y},${input.captionsFilter}[vout]`;
   }
   const maps = ['-map', '[vout]'];
-
-  if (!input.hasAudio) return { graph, maps };
-  if (whole) {
-    maps.push('-map', '0:a:0');
+  const speech = speechAudio(input, whole);
+  graph += speech.graph;
+  if (!input.music) {
+    if (speech.label) maps.push('-map', speech.label);
     return { graph, maps };
   }
 
+  // Background music (its input is already looped and cut to the clip's
+  // length): faded in and out, and pushed down while someone talks.
+  const { music } = input;
+  const length = outputLength(input);
+  const fadeOut = Math.min(1.5, length / 3);
+  graph +=
+    `;[${music.input}:a]volume=${num(music.volume)},afade=t=in:st=0:d=${num(Math.min(1, length / 4))},` +
+    `afade=t=out:st=${num(Math.max(0, length - fadeOut))}:d=${num(fadeOut)}[music]`;
+  if (!speech.label) {
+    maps.push('-map', '[music]');
+    return { graph, maps };
+  }
+  graph +=
+    `;${speech.label}asplit=2[voice][key]` +
+    `;[music][key]sidechaincompress=threshold=0.02:ratio=8:attack=15:release=350[ducked]` +
+    `;[voice][ducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95[mixed]`;
+  maps.push('-map', '[mixed]');
+  return { graph, maps };
+}
+
+/** Length of the finished clip (the kept parts together). */
+function outputLength(input: RenderGraphInput): number {
+  return input.kept.reduce((sum, r) => sum + r.end - r.start, 0);
+}
+
+/**
+ * The clip's own sound after the cuts: the label to map or mix (null
+ * without sound), and the graph part that makes it. Each kept part gets a
+ * 10 ms fade at both ends so the joins don't click.
+ */
+function speechAudio(input: RenderGraphInput, whole: boolean): { graph: string; label: string | null } {
+  const kept = input.kept;
+  if (!input.hasAudio) return { graph: '', label: null };
+  if (whole) return input.music ? { graph: ';[0:a:0]anull[speech]', label: '[speech]' } : { graph: '', label: '0:a:0' };
   const pieces = kept.map((r, i) => {
     const length = r.end - r.start;
     const fade = num(Math.min(0.01, length / 4));
@@ -200,15 +236,13 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
       `afade=t=in:st=0:d=${fade},afade=t=out:st=${num(length - Math.min(0.01, length / 4))}:d=${fade}[b${i}]`
     );
   });
-  if (kept.length === 1) {
-    graph += `;[0:a:0]${pieces[0]}`;
-    maps.push('-map', '[b0]');
-    return { graph, maps };
-  }
-  graph +=
-    `;[0:a:0]asplit=${kept.length}${kept.map((_, i) => `[a${i}]`).join('')}` +
-    pieces.map((piece, i) => `;[a${i}]${piece}`).join('') +
-    `;${kept.map((_, i) => `[b${i}]`).join('')}concat=n=${kept.length}:v=0:a=1[aout]`;
-  maps.push('-map', '[aout]');
-  return { graph, maps };
+  if (kept.length === 1) return { graph: `;[0:a:0]${pieces[0]}`, label: '[b0]' };
+  return {
+    graph:
+      `;[0:a:0]asplit=${kept.length}${kept.map((_, i) => `[a${i}]`).join('')}` +
+      pieces.map((piece, i) => `;[a${i}]${piece}`).join('') +
+      `;${kept.map((_, i) => `[b${i}]`).join('')}concat=n=${kept.length}:v=0:a=1[aout]`,
+    label: '[aout]',
+  };
 }
+

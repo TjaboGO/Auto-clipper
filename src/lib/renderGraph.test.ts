@@ -159,3 +159,14 @@ test('a logo goes on top of the picture, under the captions', () => {
   // Without a logo the graph doesn't mention a second input.
   assert.doesNotMatch(buildRenderGraph(input({})).graph, /1:v/);
 });
+
+test('background music is faded, ducked under the speech and mixed in', () => {
+  const { graph, maps } = buildRenderGraph(input({ kept: [{ start: 0, end: 4 }, { start: 5, end: 9 }], music: { input: 1, volume: 0.3 } }));
+  assert.match(graph, /;\[1:a\]volume=0\.3,afade=t=in:st=0:d=1,afade=t=out:st=6\.5:d=1\.5\[music\]/);
+  assert.match(graph, /;\[aout\]asplit=2\[voice\]\[key\];\[music\]\[key\]sidechaincompress=[^;]*\[ducked\]/);
+  assert.match(graph, /;\[voice\]\[ducked\]amix=inputs=2:duration=first[^;]*\[mixed\]$/);
+  assert.deepEqual(maps, ['-map', '[vout]', '-map', '[mixed]']);
+  // A clip without sound gets just the music.
+  const silent = buildRenderGraph(input({ hasAudio: false, music: { input: 1, volume: 0.3 } }));
+  assert.deepEqual(silent.maps, ['-map', '[vout]', '-map', '[music]']);
+});

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { config } from './config';
 import { run } from './exec';
-import { brandInfo, customFontPath, logoFile } from './brand';
+import { brandInfo, customFontPath, logoFile, musicTrack } from './brand';
 import { buildClipAss, escapeFfmpegFilterPath } from './captions';
 import { buildRenderGraph } from './renderGraph';
 import { captionFont, isCustomFontId } from './edit/fonts';
@@ -87,6 +87,10 @@ export async function renderClipEdit(opts: {
     emojiInputs.push('-loop', '1', '-t', String(Math.max(0.2, length)), '-i', file);
     return [{ input: nextInput++, rect: emojiRect(metrics), start: show.start, end: show.end }];
   });
+  // Background music: looped and cut to the finished clip's length.
+  const track = edit.music ? musicTrack(edit.music.track) : null;
+  const musicInputs = track ? ['-stream_loop', '-1', '-t', String(Math.max(0.2, duration)), '-i', track.path] : [];
+  const music = track && edit.music ? { input: nextInput++, volume: edit.music.volume } : undefined;
 
   // Framing keyframes are source times; ffmpeg's t starts at 0 at `start`.
   const auto = data.analysis?.keyframes ?? [];
@@ -119,6 +123,7 @@ export async function renderClipEdit(opts: {
       `:fontsdir='${escapeFfmpegFilterPath(fontsDir)}'`,
     logo,
     emojis,
+    music,
     zoom: layout === 'single' && edit.zoom !== 'off' ? { factor: zoomFactor(edit.zoom), segments: zoomSegments(spoken, duration) } : undefined,
   });
   // A clip with many cuts has a long graph: pass it as a file, not an argument.
@@ -135,6 +140,7 @@ export async function renderClipEdit(opts: {
       '-i', sourcePath,
       ...(logo ? ['-i', logoFile()] : []),
       ...emojiInputs,
+      ...musicInputs,
       '-filter_complex_script', graphPath,
       ...maps,
       '-c:v', 'libx264',

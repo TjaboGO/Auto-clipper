@@ -44,6 +44,25 @@ interface PreviewProps {
   emojiRect: { x: number; y: number; size: number };
   /** Punch-in zooms (clip timeline) and how close. */
   zoom: { factor: number; segments: TimeRange[] };
+  /** Background music to play along (looped), or null. */
+  music: { url: string; volume: number; duration: number } | null;
+}
+
+/**
+ * Keep the music in step with the clip: playing from the same point
+ * (looped) while the video plays, paused otherwise. Nudged only when it
+ * drifts, so it doesn't stutter.
+ */
+function syncMusic(audio: HTMLAudioElement | null, music: PreviewProps['music'], o: number | null): void {
+  if (!audio) return;
+  if (!music || o === null) {
+    if (!audio.paused) audio.pause();
+    return;
+  }
+  audio.volume = Math.max(0, Math.min(1, music.volume));
+  const target = music.duration > 0 ? o % music.duration : o;
+  if (Math.abs(audio.currentTime - target) > 0.3) audio.currentTime = target;
+  if (audio.paused) audio.play().catch(() => undefined);
 }
 
 export function Preview(props: PreviewProps) {
@@ -59,6 +78,7 @@ export function Preview(props: PreviewProps) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const logoImage = useRef<HTMLImageElement | null>(null);
   const [logoLoads, setLogoLoads] = useState(0);
+  const musicRef = useRef<HTMLAudioElement>(null);
   const emojiImages = useRef(new Map<string, HTMLImageElement>());
   const [emojiLoads, setEmojiLoads] = useState(0);
 
@@ -77,6 +97,7 @@ export function Preview(props: PreviewProps) {
     }
     const k = canvas.width / p.spec.out.w;
     const o = toOutputTime(p.kept, t);
+    syncMusic(musicRef.current, p.music, video.paused || o === null ? null : o);
     drawFrame(ctx, video, p.spec, t, o !== null && zoomedAt(p.zoom.segments, o) ? p.zoom.factor : 1);
     if (o !== null) {
       if (p.edit.logo.enabled && p.logo && logoImage.current) {
@@ -341,6 +362,7 @@ export function Preview(props: PreviewProps) {
           </p>
         )}
       </div>
+      {props.music && <audio ref={musicRef} src={props.music.url} preload="auto" loop className="hidden" />}
       {props.preview.url && (
         // Off screen but rendered: some browsers stop decoding hidden videos.
         <video

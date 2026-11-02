@@ -8,6 +8,7 @@ import type {
   BrandStyle,
   CaptionPresetId,
   CaptionTranslation,
+  ClipMusic,
   CaptionSettings,
   ClipEdit,
   LayoutMode,
@@ -118,6 +119,7 @@ export function defaultEdit(opts: {
   aspect?: AspectRatio;
   captionPreset?: CaptionPresetId;
   zoom?: ZoomLevel;
+  music?: ClipMusic | null;
 }): ClipEdit {
   return {
     v: 1,
@@ -137,6 +139,7 @@ export function defaultEdit(opts: {
     logo: { ...DEFAULT_LOGO },
     translation: null,
     zoom: opts.zoom ?? 'off',
+    music: opts.music ?? null,
   };
 }
 
@@ -206,7 +209,17 @@ export function upgradeEdit(edit: ClipEdit): ClipEdit {
     panelSize: panelSize(edit.panelSize, null),
     translation: sanitizeTranslation(edit.translation, null),
     zoom: oneOf(edit.zoom, ZOOM_LEVELS.map((l) => l.id), 'off'),
+    music: sanitizeMusic(edit.music, null),
   };
+}
+
+export const DEFAULT_MUSIC_VOLUME = 0.3;
+
+/** Background music as sent from the editor: one of your tracks (by id) and a volume. */
+export function sanitizeMusic(value: unknown, fallback: ClipMusic | null): ClipMusic | null {
+  if (value === null) return null;
+  if (!isObject(value) || typeof value.track !== 'string' || !/^m-[0-9a-f]{6,40}$/.test(value.track)) return fallback;
+  return { track: value.track, volume: num(value.volume, 0.05, 1, DEFAULT_MUSIC_VOLUME) };
 }
 
 const MAX_TRANSLATED_SEGMENTS = 400;
@@ -334,5 +347,6 @@ export function sanitizeEdit(
     logo: sanitizeLogo(raw.logo, fallback.logo ?? DEFAULT_LOGO),
     translation: sanitizeTranslation(raw.translation, fallback.translation ?? null),
     zoom: oneOf(raw.zoom, ZOOM_LEVELS.map((l) => l.id), fallback.zoom ?? 'off'),
+    music: sanitizeMusic(raw.music, fallback.music ?? null),
   };
 }

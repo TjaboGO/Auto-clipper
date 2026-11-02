@@ -25,6 +25,7 @@ import {
 import type { BrandInfo, ClipEdit, WordOverride } from '@/lib/edit/types';
 import type { RenderedClip } from '@/lib/types';
 import type { FrameSpec } from './draw';
+import { musicUrl } from '@/components/brandApi';
 import { formatTime } from './format';
 import { previewFormat } from './previewFormat';
 import { Preview, type PreviewHandle } from './Preview';
@@ -145,6 +146,10 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
         : { factor: 1, segments: [] },
     [resolved.layout, edit.zoom, spokenWords, duration],
   );
+  const musicPreview = useMemo(() => {
+    const track = edit.music && brand.music?.find((t) => t.id === edit.music?.track);
+    return track && edit.music ? { url: musicUrl(track.id), volume: edit.music.volume, duration: track.duration } : null;
+  }, [edit.music, brand.music]);
   const titleM = useMemo(
     () => titleMetrics(edit.captions, edit.title.duration, out, edit.aspect, duration),
     [edit.captions, edit.title.duration, out, edit.aspect, duration],
@@ -614,6 +619,7 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             emojis={emojis}
             emojiRect={emojiRect(metrics)}
             zoom={zoom}
+            music={musicPreview}
           />
         </section>
 

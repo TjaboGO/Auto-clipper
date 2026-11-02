@@ -192,6 +192,7 @@ export function UploadForm() {
     options.keywords ? 'nyckelord' : null,
     options.emojis ? 'emojis' : null,
     options.zoom !== 'off' ? 'zoom' : null,
+    options.music ? 'musik' : null,
     options.visual === 'on' ? 'bildanalys' : options.visual === 'off' ? 'ingen bildanalys' : null,
     options.translate ? `texter på ${captionLanguage(options.translate)?.label.toLowerCase()}` : null,
     from || to ? `${from || '0:00'}-${to || 'slut'}` : null,
@@ -362,6 +363,23 @@ export function UploadForm() {
               </div>
               <p className="text-xs text-gray-500 mt-1">Bilden går närmare ibland när någon pratar, för mer tempo.</p>
             </Field>
+            {(brand?.music ?? []).length > 0 && (
+              <Field label="Bakgrundsmusik">
+                <select
+                  aria-label="Bakgrundsmusik"
+                  value={options.music}
+                  onChange={(e) => set({ music: e.target.value })}
+                  className="w-full rounded-lg bg-base-800 px-3 py-2 text-sm"
+                >
+                  <option value="">Ingen musik</option>
+                  {(brand?.music ?? []).map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <Field label="Texternas språk">
               <select
                 aria-label="Texternas språk"

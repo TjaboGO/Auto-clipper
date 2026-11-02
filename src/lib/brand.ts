@@ -6,14 +6,18 @@ import path from 'path';
 import { config } from './config';
 import { run } from './exec';
 import { captionMetrics, readFontFile } from './fontFile';
-import { probeDimensions } from './probe';
+import { probeDimensions, probeDuration, probeHasAudio } from './probe';
 import { setCustomFonts, type CustomFont } from './edit/fonts';
 import { sanitizeStyle } from './edit/presets';
-import type { BrandInfo, BrandStyle, LogoImage } from './edit/types';
+import type { BrandInfo, BrandStyle, LogoImage, MusicTrack } from './edit/types';
 
 export const MAX_FONTS = 30;
 export const MAX_FONT_BYTES = 20 * 1024 * 1024;
 export const MAX_LOGO_BYTES = 10 * 1024 * 1024;
+export const MAX_MUSIC = 30;
+export const MAX_MUSIC_BYTES = 40 * 1024 * 1024;
+// Long enough for any clip; longer files are cut.
+const MAX_MUSIC_SECONDS = 15 * 60;
 // The logo is stored no bigger than this; it's a corner of a 1080p frame.
 const LOGO_MAX_SIDE = 800;
 
@@ -21,6 +25,7 @@ const LOGO_MAX_SIDE = 800;
 const brandFile = () => path.join(/* turbopackIgnore: true */ config.brandDir, 'brand.json');
 const fontsDir = () => path.join(/* turbopackIgnore: true */ config.brandDir, 'fonts');
 export const logoFile = () => path.join(/* turbopackIgnore: true */ config.brandDir, 'logo.png');
+const musicDir = () => path.join(/* turbopackIgnore: true */ config.brandDir, 'music');
 
 let cache: BrandInfo | null = null;
 
@@ -42,10 +47,21 @@ function load(): BrandInfo {
           fs.existsSync(path.join(/* turbopackIgnore: true */ fontsDir(), path.basename(f.file))),
       )
     : [];
+  const music = Array.isArray(raw.music)
+    ? raw.music.filter(
+        (m) =>
+          m &&
+          typeof m.id === 'string' &&
+          /^m-[0-9a-f]+$/.test(m.id) &&
+          typeof m.file === 'string' &&
+          fs.existsSync(path.join(/* turbopackIgnore: true */ musicDir(), path.basename(m.file))),
+      )
+    : [];
   cache = {
     fonts,
     logo: raw.logo && fs.existsSync(logoFile()) ? raw.logo : null,
     style: raw.style ?? null,
+    music,
   };
   setCustomFonts(cache.fonts);
   return cache;
@@ -180,6 +196,67 @@ export async function setLogo(buf: Buffer): Promise<LogoImage> {
 export function removeLogo(): void {
   fs.rmSync(logoFile(), { force: true });
   save({ ...load(), logo: null });
+}
+
+// ---------------------------------------------------------------------------
+// Music
+// ---------------------------------------------------------------------------
+
+/**
+ * Add an uploaded music file (mp3, m4a, wav, ogg ...): stored as AAC in an
+ * .m4a, at most MAX_MUSIC_SECONDS long. Throws with a message for the user
+ * if it can't be used.
+ */
+export async function addMusic(buf: Buffer, originalName: string): Promise<MusicTrack> {
+  const brand = load();
+  const music = brand.music ?? [];
+  if (music.length >= MAX_MUSIC) throw new Error(`Du kan ha högst ${MAX_MUSIC} låtar. Ta bort någon först.`);
+  const id = `m-${crypto.createHash('sha1').update(buf).digest('hex').slice(0, 10)}`;
+  if (music.some((m) => m.id === id)) throw new Error('Den här låten är redan uppladdad.');
+  fs.mkdirSync(musicDir(), { recursive: true });
+  const upload = path.join(/* turbopackIgnore: true */ musicDir(), `${id}-upload`);
+  const file = `${id}.m4a`;
+  const stored = path.join(/* turbopackIgnore: true */ musicDir(), file);
+  fs.writeFileSync(upload, buf);
+  try {
+    if (!(await probeHasAudio(upload).catch(() => false))) {
+      throw new Error('Filen har inget ljud som går att läsa. Prova en mp3, m4a eller wav.');
+    }
+    await run(
+      'ffmpeg',
+      ['-v', 'error', '-y', '-i', upload, '-vn', '-t', String(MAX_MUSIC_SECONDS), '-ac', '2', '-ar', '44100', '-c:a', 'aac', '-b:a', '160k', stored],
+      {},
+      5 * 60 * 1000,
+    );
+    const duration = await probeDuration(stored);
+    if (!(duration >= 1)) throw new Error('Låten är för kort.');
+    const name = path.basename(originalName).replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim().slice(0, 80) || 'Låt';
+    const track: MusicTrack = { id, name, file, duration: Math.round(duration * 10) / 10, addedAt: new Date().toISOString() };
+    save({ ...load(), music: [...music, track] });
+    return track;
+  } catch (err) {
+    fs.rmSync(stored, { force: true });
+    if (err instanceof Error && /Filen har inget ljud|för kort/.test(err.message)) throw err;
+    console.warn('[brand] could not read the music file:', err);
+    throw new Error('Kunde inte läsa ljudfilen. Prova en mp3, m4a eller wav.');
+  } finally {
+    fs.rmSync(upload, { force: true });
+  }
+}
+
+export function removeMusic(id: string): boolean {
+  const brand = load();
+  const track = (brand.music ?? []).find((m) => m.id === id);
+  if (!track) return false;
+  fs.rmSync(path.join(/* turbopackIgnore: true */ musicDir(), path.basename(track.file)), { force: true });
+  save({ ...brand, music: (brand.music ?? []).filter((m) => m.id !== id) });
+  return true;
+}
+
+/** One of your tracks (for playing and rendering), or null. */
+export function musicTrack(id: string): { track: MusicTrack; path: string } | null {
+  const track = (load().music ?? []).find((m) => m.id === id);
+  return track ? { track, path: path.join(/* turbopackIgnore: true */ musicDir(), path.basename(track.file)) } : null;
 }
 
 // ---------------------------------------------------------------------------

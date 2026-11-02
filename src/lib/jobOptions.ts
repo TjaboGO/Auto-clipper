@@ -58,6 +58,8 @@ export interface JobOptions {
   emojis: boolean;
   /** Automatic punch-in zooms (follow-the-speaker clips). */
   zoom: ZoomLevel;
+  /** One of your music tracks under every clip ("m-..."), or ''. */
+  music: string;
 }
 
 export const MAX_TOPIC_LENGTH = 200;
@@ -76,6 +78,7 @@ export function defaultJobOptions(): JobOptions {
     translate: '',
     emojis: false,
     zoom: 'off',
+    music: '',
   };
 }
 
@@ -119,6 +122,7 @@ export function sanitizeJobOptions(raw: unknown): JobOptions {
     translate: pick(raw.translate, ['', ...CAPTION_LANGUAGES.map((l) => l.code)], defaults.translate),
     emojis: typeof raw.emojis === 'boolean' ? raw.emojis : defaults.emojis,
     zoom: pick(raw.zoom, ZOOM_LEVELS.map((l) => l.id), defaults.zoom),
+    music: typeof raw.music === 'string' && /^m-[0-9a-f]{6,40}$/.test(raw.music) ? raw.music : defaults.music,
   };
 }
 

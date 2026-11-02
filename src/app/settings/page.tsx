@@ -10,10 +10,13 @@ import {
   deleteLogo,
   fetchBrand,
   fetchCookies,
+  deleteMusic,
   logoUrl,
+  musicUrl,
   saveCookies,
   uploadFont,
   uploadLogo,
+  uploadMusic,
   type CookieStatus,
 } from '@/components/brandApi';
 import { StyleSample } from '@/components/CaptionStyleParts';
@@ -244,6 +247,46 @@ export default function SettingsPage() {
             </div>
             <p className="text-xs text-gray-500">PNG, JPEG eller WebP. En PNG med genomskinlig bakgrund blir snyggast.</p>
             {note('logga')}
+          </Card>
+
+          <Card
+            id="musik"
+            title="Musik"
+            intro="Låtar att lägga under klippen. Välj låt per klipp i redigeraren under Ljud, eller när du skapar klipp. Musiken sänks automatiskt när någon pratar."
+          >
+            {(brand.music ?? []).length > 0 && (
+              <ul className="divide-y divide-base-800 rounded-lg bg-base-800/40">
+                {(brand.music ?? []).map((t) => (
+                  <li key={t.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+                    <div className="min-w-0 mr-auto">
+                      <p className="truncate">{t.name}</p>
+                      <p className="text-xs text-gray-400">
+                        {Math.floor(t.duration / 60)}:{String(Math.round(t.duration % 60)).padStart(2, '0')}
+                      </p>
+                    </div>
+                    <audio controls preload="none" src={musicUrl(t.id)} className="h-8 max-w-[220px]" />
+                    <SmallButton danger disabled={busy === 'musik'} onClick={() => run('musik', async () => {
+                      showBrand(await deleteMusic(t.id));
+                      return `${t.name} är borttagen. Klipp som hade den blir utan musik nästa gång de renderas.`;
+                    })}>
+                      Ta bort
+                    </SmallButton>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <FileButton accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac" busy={busy === 'musik'} onFile={(file) => run('musik', async () => {
+              const { track, brand: next } = await uploadMusic(file);
+              showBrand(next);
+              return `${track.name} är uppladdad.`;
+            })}>
+              + Ladda upp musik
+            </FileButton>
+            <p className="text-xs text-gray-500">
+              MP3, M4A, WAV eller OGG, högst 40 MB. Använd bara musik du har rätt att använda, till exempel från
+              YouTubes ljudbibliotek eller annan royaltyfri musik.
+            </p>
+            {note('musik')}
           </Card>
         </>
       )}

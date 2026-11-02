@@ -12,8 +12,8 @@ import { analyzeFraming } from './smartCrop';
 import { renderClipEdit } from './render';
 import { dropSource, sourceAvailable, writeClipEdit, writeEditorData, writeRenderedEdit } from './editor';
 import { buildEditorWords, editWindow, emojiWordIds, keywordWordIds, needsFramingAnalysis } from './editorWords';
-import { defaultEdit, withStyle } from './edit/presets';
-import { brandInfo, brandStyle } from './brand';
+import { DEFAULT_MUSIC_VOLUME, defaultEdit, withStyle } from './edit/presets';
+import { brandInfo, brandStyle, musicTrack } from './brand';
 import { clipWords } from './edit/timeline';
 import { captionLanguage, sentencesToTranslate } from './edit/translation';
 import type { SourceInfo } from './edit/types';
@@ -270,6 +270,8 @@ async function renderSuggestions(opts: {
         aspect: options.aspect,
         captionPreset: options.captionPreset === 'mine' ? undefined : options.captionPreset,
         zoom: options.zoom,
+        // A track that has been deleted since the job started is left out.
+        music: options.music && musicTrack(options.music) ? { track: options.music, volume: DEFAULT_MUSIC_VOLUME } : null,
       });
       if (mine) edit = withStyle(edit, mine, hasLogo);
       const spoken = clipWords(data.words, edit);

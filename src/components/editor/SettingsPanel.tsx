@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type ReactNode } from 'react';
-import { logoUrl, saveStyle, uploadFont, uploadLogo } from '@/components/brandApi';
+import { logoUrl, saveStyle, uploadFont, uploadLogo, uploadMusic } from '@/components/brandApi';
 import { AspectIcon, CaptionPresetPicker } from '@/components/CaptionStyleParts';
 import { FileButton } from '@/components/FileButton';
 import { CAPTION_FONTS, cssFontFamily, type CaptionFont } from '@/lib/edit/fonts';
@@ -14,7 +14,7 @@ import {
   splitAllowed,
   type ResolvedLayout,
 } from '@/lib/edit/layout';
-import { captionPreset, LOGO_CORNERS, presetCaptions, withStyle } from '@/lib/edit/presets';
+import { captionPreset, DEFAULT_MUSIC_VOLUME, LOGO_CORNERS, presetCaptions, withStyle } from '@/lib/edit/presets';
 import { CAPTION_LANGUAGES, captionLanguage } from '@/lib/edit/translation';
 import { ZOOM_LEVELS } from '@/lib/edit/zoom';
 import type {
@@ -30,7 +30,7 @@ import type {
 } from '@/lib/edit/types';
 import { formatTime } from './format';
 
-type Tab = 'text' | 'layout' | 'title' | 'logo';
+type Tab = 'text' | 'layout' | 'title' | 'logo' | 'sound';
 
 const CORNER_LABELS: Record<LogoCorner, string> = {
   'top-left': 'Uppe till vänster',
@@ -184,11 +184,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const camPossible = !!facecam && splitAllowed(edit.aspect);
   const groupSize = props.analysis?.group?.length ?? 0;
   const { brand, onBrand } = props;
-  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | 'translate' | 'emoji' | null>(null);
+  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const setLogo = (patch: Partial<LogoSettings>, key?: string) => set({ ...edit, logo: { ...edit.logo, ...patch } }, key);
 
-  async function run(what: 'font' | 'logo' | 'style' | 'translate' | 'emoji', job: () => Promise<string | null>) {
+  async function run(what: 'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music', job: () => Promise<string | null>) {
     setBusy(what);
     setMessage(null);
     try {
@@ -230,6 +230,14 @@ export function SettingsPanel(props: SettingsPanelProps) {
       return 'Sparad som Min stil. Välj Min stil när du skapar klipp, så får de den här looken.';
     });
 
+  const tracks = brand.music ?? [];
+  const addMusic = (file: File) =>
+    run('music', async () => {
+      const { track, brand: next } = await uploadMusic(file);
+      onBrand(next);
+      set({ ...edit, music: { track: track.id, volume: edit.music?.volume ?? DEFAULT_MUSIC_VOLUME } });
+      return `${track.name} är uppladdad och ligger under klippet.`;
+    });
   const removeEmojis = () => {
     const words: ClipEdit['words'] = {};
     for (const [id, { emoji: _emoji, ...rest }] of Object.entries(edit.words)) {
@@ -334,6 +342,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
             ['layout', 'Bild'],
             ['title', 'Rubrik'],
             ['logo', 'Logga'],
+            ['sound', 'Ljud'],
           ] as [Tab, string][]
         ).map(([id, label]) => (
           <button
@@ -772,6 +781,57 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 <FileButton accept="image/png,image/jpeg,image/webp" busy={busy === 'logo'} onFile={addLogo}>
                   Ladda upp logga
                 </FileButton>
+              </>
+            )}
+          </>
+        )}
+
+        {tab === 'sound' && (
+          <>
+            <Section title="Bakgrundsmusik">
+              {tracks.length > 0 ? (
+                <div className="space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => set({ ...edit, music: null })}
+                    className={`w-full rounded-md border px-3 py-2 text-left text-sm ${!edit.music ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
+                  >
+                    Ingen musik
+                  </button>
+                  {tracks.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => set({ ...edit, music: { track: t.id, volume: edit.music?.volume ?? DEFAULT_MUSIC_VOLUME } })}
+                      className={`w-full rounded-md border px-3 py-2 text-left text-sm ${edit.music?.track === t.id ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
+                    >
+                      <span className="block truncate">{t.name}</span>
+                      <span className="block text-xs text-gray-400">{formatTime(t.duration)}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-300">Ladda upp en låt du har rätt att använda, så kan du lägga den under klippen.</p>
+              )}
+              <FileButton accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac" busy={busy === 'music'} onFile={addMusic}>
+                + Ladda upp musik
+              </FileButton>
+            </Section>
+            {edit.music && (
+              <>
+                <Slider
+                  label="Volym"
+                  value={edit.music.volume}
+                  min={0.05}
+                  max={1}
+                  step={0.05}
+                  format={(v) => `${Math.round(v * 100)} %`}
+                  onChange={(v, key) => edit.music && set({ ...edit, music: { ...edit.music, volume: v } }, key)}
+                />
+                <p className="text-xs text-gray-400">
+                  Musiken sänks automatiskt när någon pratar, och tonas in och ut. I förhandsvisningen hörs den utan
+                  den sänkningen.
+                </p>
               </>
             )}
           </>

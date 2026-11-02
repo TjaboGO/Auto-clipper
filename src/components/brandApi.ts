@@ -1,7 +1,7 @@
 // The browser side of the brand kit API (fonts, logo, "Min stil") and the
 // YouTube cookies, shared by the editor and the settings page.
 import type { CustomFont } from '@/lib/edit/fonts';
-import type { BrandInfo, BrandStyle } from '@/lib/edit/types';
+import type { BrandInfo, BrandStyle, MusicTrack } from '@/lib/edit/types';
 
 export interface CookieStatus {
   present: boolean;
@@ -75,3 +75,17 @@ export const deleteCookies = () =>
   call<{ cookies: CookieStatus }>('/api/youtube-cookies', { method: 'DELETE' }, 'Kunde inte ta bort cookies.').then(
     (b) => b.cookies,
   );
+
+export const uploadMusic = (file: File) =>
+  call<{ track: MusicTrack; brand: BrandInfo }>(
+    `/api/brand/music?filename=${encodeURIComponent(file.name)}`,
+    { method: 'POST', body: file },
+    'Kunde inte ladda upp låten.',
+  );
+
+export const deleteMusic = (id: string) =>
+  call<{ brand: BrandInfo }>(`/api/brand/music/${encodeURIComponent(id)}`, { method: 'DELETE' }, 'Kunde inte ta bort låten.').then(
+    (b) => b.brand,
+  );
+
+export const musicUrl = (id: string) => `/api/brand/music/${encodeURIComponent(id)}`;
