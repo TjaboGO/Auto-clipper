@@ -2,6 +2,7 @@ import { allFonts } from './fonts';
 import { PANEL_SIZE_RANGE } from './layout';
 import { captionLanguage } from './translation';
 import { knownEmoji } from './emoji';
+import { ZOOM_LEVELS, type ZoomLevel } from './zoom';
 import type {
   AspectRatio,
   BrandStyle,
@@ -116,6 +117,7 @@ export function defaultEdit(opts: {
   title: string;
   aspect?: AspectRatio;
   captionPreset?: CaptionPresetId;
+  zoom?: ZoomLevel;
 }): ClipEdit {
   return {
     v: 1,
@@ -134,6 +136,7 @@ export function defaultEdit(opts: {
     reframe: [],
     logo: { ...DEFAULT_LOGO },
     translation: null,
+    zoom: opts.zoom ?? 'off',
   };
 }
 
@@ -202,6 +205,7 @@ export function upgradeEdit(edit: ClipEdit): ClipEdit {
     logo: sanitizeLogo(edit.logo, DEFAULT_LOGO),
     panelSize: panelSize(edit.panelSize, null),
     translation: sanitizeTranslation(edit.translation, null),
+    zoom: oneOf(edit.zoom, ZOOM_LEVELS.map((l) => l.id), 'off'),
   };
 }
 
@@ -329,5 +333,6 @@ export function sanitizeEdit(
     reframe,
     logo: sanitizeLogo(raw.logo, fallback.logo ?? DEFAULT_LOGO),
     translation: sanitizeTranslation(raw.translation, fallback.translation ?? null),
+    zoom: oneOf(raw.zoom, ZOOM_LEVELS.map((l) => l.id), fallback.zoom ?? 'off'),
   };
 }

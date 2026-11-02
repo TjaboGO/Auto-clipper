@@ -16,6 +16,7 @@ import {
 } from '@/lib/edit/layout';
 import { captionPreset, LOGO_CORNERS, presetCaptions, withStyle } from '@/lib/edit/presets';
 import { CAPTION_LANGUAGES, captionLanguage } from '@/lib/edit/translation';
+import { ZOOM_LEVELS } from '@/lib/edit/zoom';
 import type {
   AspectRatio,
   BrandInfo,
@@ -562,6 +563,25 @@ export function SettingsPanel(props: SettingsPanelProps) {
             {props.resolved.layout === 'split' && (
               <Toggle label="Byt plats på personerna" checked={edit.splitSwap} onChange={(v) => set({ ...edit, splitSwap: v })} />
             )}
+            <Section title="Automatisk zoom">
+              <div className="grid grid-cols-4 gap-1.5">
+                {ZOOM_LEVELS.map((z) => (
+                  <button
+                    key={z.id}
+                    type="button"
+                    onClick={() => set({ ...edit, zoom: z.id })}
+                    className={`rounded-md border px-2 py-1.5 text-sm ${edit.zoom === z.id ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
+                  >
+                    {z.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400">
+                {props.resolved.layout === 'single'
+                  ? 'Bilden går närmare varannan mening och på markerade ord, som när man klipper mellan två kameravinklar.'
+                  : 'Zoomen fungerar bara med layouten Följ talaren.'}
+              </p>
+            </Section>
             {stackLayout && facecam && (
               <Section title={props.resolved.layout === 'facecam' ? 'Kameran' : 'Skärmen'}>
                 {facecam.found === 'guess' && (

@@ -2,6 +2,7 @@
 // clips). Plain TypeScript: the upload form and the server share it.
 import { ASPECT_RATIOS, CAPTION_PRESETS } from './edit/presets';
 import { CAPTION_LANGUAGES } from './edit/translation';
+import { ZOOM_LEVELS, type ZoomLevel } from './edit/zoom';
 import type { AspectRatio, CaptionPresetId } from './edit/types';
 
 export type ClipLengthId = 'auto' | 'short' | 'medium' | 'long' | 'xlong';
@@ -55,6 +56,8 @@ export interface JobOptions {
   translate: string;
   /** Put the AI's emojis over the captions. */
   emojis: boolean;
+  /** Automatic punch-in zooms (follow-the-speaker clips). */
+  zoom: ZoomLevel;
 }
 
 export const MAX_TOPIC_LENGTH = 200;
@@ -72,6 +75,7 @@ export function defaultJobOptions(): JobOptions {
     visual: 'auto',
     translate: '',
     emojis: false,
+    zoom: 'off',
   };
 }
 
@@ -114,6 +118,7 @@ export function sanitizeJobOptions(raw: unknown): JobOptions {
     visual: pick(raw.visual, VISUAL_MODES.map((m) => m.id), defaults.visual),
     translate: pick(raw.translate, ['', ...CAPTION_LANGUAGES.map((l) => l.code)], defaults.translate),
     emojis: typeof raw.emojis === 'boolean' ? raw.emojis : defaults.emojis,
+    zoom: pick(raw.zoom, ZOOM_LEVELS.map((l) => l.id), defaults.zoom),
   };
 }
 

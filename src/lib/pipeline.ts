@@ -269,6 +269,7 @@ async function renderSuggestions(opts: {
         title: suggestion.title,
         aspect: options.aspect,
         captionPreset: options.captionPreset === 'mine' ? undefined : options.captionPreset,
+        zoom: options.zoom,
       });
       if (mine) edit = withStyle(edit, mine, hasLogo);
       const spoken = clipWords(data.words, edit);

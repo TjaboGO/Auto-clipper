@@ -8,6 +8,7 @@ import { MIN_CLIP_SECONDS } from '@/lib/edit/presets';
 import { CAPTION_FONTS, setCustomFonts } from '@/lib/edit/fonts';
 import { sentencesToTranslate, translatedWords } from '@/lib/edit/translation';
 import { clipEmojiShows, EMOJIS, emojiRect } from '@/lib/edit/emoji';
+import { zoomFactor, zoomSegments } from '@/lib/edit/zoom';
 import {
   applyReframe,
   clipWords,
@@ -136,6 +137,13 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
   const emojis = useMemo(
     () => clipEmojiShows(edit, spokenWords, pages, duration),
     [edit, spokenWords, pages, duration],
+  );
+  const zoom = useMemo(
+    () =>
+      resolved.layout === 'single' && edit.zoom !== 'off'
+        ? { factor: zoomFactor(edit.zoom), segments: zoomSegments(spokenWords, duration) }
+        : { factor: 1, segments: [] },
+    [resolved.layout, edit.zoom, spokenWords, duration],
   );
   const titleM = useMemo(
     () => titleMetrics(edit.captions, edit.title.duration, out, edit.aspect, duration),
@@ -605,6 +613,7 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             logo={brand.logo}
             emojis={emojis}
             emojiRect={emojiRect(metrics)}
+            zoom={zoom}
           />
         </section>
 

@@ -7,6 +7,7 @@ import { logoRect } from '@/lib/edit/layout';
 import type { ClipEdit, LogoImage, TimeRange } from '@/lib/edit/types';
 import { drawCaptions, drawCropView, drawEmoji, drawFrame, drawLogo, drawTitle, type FrameSpec } from './draw';
 import { emojiFile, emojiPop, type EmojiShow } from '@/lib/edit/emoji';
+import { zoomedAt } from '@/lib/edit/zoom';
 import { formatTime } from './format';
 import type { PreviewInfo } from './types';
 
@@ -41,6 +42,8 @@ interface PreviewProps {
   /** Emojis over the captions (clip timeline), and where they go. */
   emojis: EmojiShow[];
   emojiRect: { x: number; y: number; size: number };
+  /** Punch-in zooms (clip timeline) and how close. */
+  zoom: { factor: number; segments: TimeRange[] };
 }
 
 export function Preview(props: PreviewProps) {
@@ -72,9 +75,9 @@ export function Preview(props: PreviewProps) {
       drawCropView(ctx, video, p.spec, dragCx.current ?? cxAt(p.spec.keyframes, t));
       return;
     }
-    drawFrame(ctx, video, p.spec, t);
     const k = canvas.width / p.spec.out.w;
     const o = toOutputTime(p.kept, t);
+    drawFrame(ctx, video, p.spec, t, o !== null && zoomedAt(p.zoom.segments, o) ? p.zoom.factor : 1);
     if (o !== null) {
       if (p.edit.logo.enabled && p.logo && logoImage.current) {
         drawLogo(ctx, logoImage.current, logoRect(p.spec.out, p.logo, p.edit.logo), p.edit.logo.opacity, k);

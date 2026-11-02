@@ -1,5 +1,6 @@
 import { cropLeft, fitRect, singleCrop, type OutputSize, type Panel, type ResolvedLayout } from './edit/layout';
 import { EMOJI_POP, EMOJI_RISE } from './edit/emoji';
+import { ZOOM_CENTER } from './edit/zoom';
 import type { CropKeyframe, SourceInfo, TimeRange } from './edit/types';
 
 function num(n: number): string {
@@ -74,6 +75,8 @@ export interface RenderGraphInput {
    * from `start` to `end` (clip timeline) at `rect`, popping in.
    */
   emojis?: { input: number; rect: { x: number; y: number; size: number }; start: number; end: number }[];
+  /** Punch-in zooms: the frame shown `factor` closer during `segments` (clip timeline, after the cuts). */
+  zoom?: { factor: number; segments: TimeRange[] };
 }
 
 /** The video part of the graph up to the finished frame: crop, parts stacked together, or fit. */
@@ -138,6 +141,19 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
       ...kept.slice(1).map((r, i) => `gte(T,${num(r.start)})*${num(r.start - kept[i].end)}`),
     ].join('+');
     video += `,select='${inside}',setpts='(T-(${offset}))/TB'`;
+  }
+  if (input.zoom && input.zoom.factor > 1 && input.zoom.segments.length > 0) {
+    // A copy of the finished frame, scaled up and cut back to size around
+    // ZOOM_CENTER, laid over the frame while a zoom lasts.
+    const { w, h } = input.out;
+    const zw = even(w * input.zoom.factor);
+    const zh = even(h * input.zoom.factor);
+    const x = Math.round((zw - w) * ZOOM_CENTER.x);
+    const y = Math.round((zh - h) * ZOOM_CENTER.y);
+    const when = input.zoom.segments.map((s) => `between(t,${num(s.start)},${num(s.end)})`).join('+');
+    video +=
+      `,split=2[wide][close];[close]scale=${zw}:${zh},crop=${w}:${h}:${x}:${y}[closer];` +
+      `[wide][closer]overlay=0:0:enable='${when}'`;
   }
   let graph = `${video},${input.captionsFilter}[vout]`;
   if (input.emojis?.length) {

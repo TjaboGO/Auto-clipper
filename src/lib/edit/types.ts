@@ -3,6 +3,7 @@
 // real render) share the exact same logic.
 
 import type { CustomFont } from './fonts';
+import type { ZoomLevel } from './zoom';
 
 export type AspectRatio = '9:16' | '1:1' | '4:5' | '16:9';
 
@@ -132,6 +133,8 @@ export interface ClipEdit {
   logo: LogoSettings;
   /** The captions in another language, or null for the spoken one. */
   translation: CaptionTranslation | null;
+  /** Automatic punch-in zooms (follow-the-speaker layout only), see edit/zoom.ts. */
+  zoom: ZoomLevel;
 }
 
 /** Translated captions: each transcript sentence (by its index) in another language. */

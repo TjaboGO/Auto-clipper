@@ -14,6 +14,7 @@ import {
 import { cssFontFamily, type CaptionFont } from '@/lib/edit/fonts';
 import { cropLeft, fitRect, singleCrop, type OutputSize, type Panel, type ResolvedLayout } from '@/lib/edit/layout';
 import { cxAt } from '@/lib/edit/timeline';
+import { zoomBox } from '@/lib/edit/zoom';
 import type { CaptionSettings, CropKeyframe, SourceInfo } from '@/lib/edit/types';
 
 export interface FrameSpec {
@@ -28,8 +29,11 @@ export interface FrameSpec {
 
 let blurCanvas: HTMLCanvasElement | null = null;
 
-/** Draw the framed video at source time `t`, filling the canvas (which has the output's shape). */
-export function drawFrame(ctx: CanvasRenderingContext2D, video: HTMLVideoElement, spec: FrameSpec, t: number): void {
+/**
+ * Draw the framed video at source time `t`, filling the canvas (which has
+ * the output's shape). `zoom` > 1: a punch-in (follow-the-speaker only).
+ */
+export function drawFrame(ctx: CanvasRenderingContext2D, video: HTMLVideoElement, spec: FrameSpec, t: number, zoom = 1): void {
   const { width: W, height: H } = ctx.canvas;
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
@@ -73,7 +77,8 @@ export function drawFrame(ctx: CanvasRenderingContext2D, video: HTMLVideoElement
 
   const box = singleCrop(spec.source, spec.out);
   const x = box.pans ? cropLeft(cxAt(spec.keyframes, t), box.w, spec.source.width) : 0;
-  ctx.drawImage(video, x * ps, box.y * ps, box.w * ps, box.h * ps, 0, 0, W, H);
+  const shown = zoomBox({ x, y: box.y, w: box.w, h: box.h }, zoom);
+  ctx.drawImage(video, shown.x * ps, shown.y * ps, shown.w * ps, shown.h * ps, 0, 0, W, H);
 }
 
 /** The logo, where logoRect puts it in the render (under the captions). */

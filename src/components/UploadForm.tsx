@@ -8,6 +8,7 @@ import { useCaptionFonts } from '@/components/editor/useCaptionFonts';
 import { fetchBrand } from '@/components/brandApi';
 import { ASPECT_LABELS } from '@/lib/edit/layout';
 import { CAPTION_LANGUAGES, captionLanguage } from '@/lib/edit/translation';
+import { ZOOM_LEVELS } from '@/lib/edit/zoom';
 import { CAPTION_PRESETS, captionPreset } from '@/lib/edit/presets';
 import { captionFont, setCustomFonts } from '@/lib/edit/fonts';
 import type { BrandInfo } from '@/lib/edit/types';
@@ -190,6 +191,7 @@ export function UploadForm() {
     options.captionPreset === 'mine' ? 'Min stil' : captionPreset(options.captionPreset).label,
     options.keywords ? 'nyckelord' : null,
     options.emojis ? 'emojis' : null,
+    options.zoom !== 'off' ? 'zoom' : null,
     options.visual === 'on' ? 'bildanalys' : options.visual === 'off' ? 'ingen bildanalys' : null,
     options.translate ? `texter på ${captionLanguage(options.translate)?.label.toLowerCase()}` : null,
     from || to ? `${from || '0:00'}-${to || 'slut'}` : null,
@@ -350,6 +352,16 @@ export function UploadForm() {
                 className="mt-1 h-4 w-4 accent-accent-500"
               />
             </label>
+            <Field label="Automatisk zoom">
+              <div className="grid grid-cols-4 gap-1.5">
+                {ZOOM_LEVELS.map((z) => (
+                  <Choice key={z.id} active={options.zoom === z.id} onClick={() => set({ zoom: z.id })}>
+                    <span className="block text-xs font-medium">{z.label}</span>
+                  </Choice>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Bilden går närmare ibland när någon pratar, för mer tempo.</p>
+            </Field>
             <Field label="Texternas språk">
               <select
                 aria-label="Texternas språk"

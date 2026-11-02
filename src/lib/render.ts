@@ -9,6 +9,7 @@ import { captionFont, isCustomFontId } from './edit/fonts';
 import { captionMetrics, captionPages } from './edit/captionLayout';
 import { clipEmojiShows, emojiFile, emojiRect } from './edit/emoji';
 import { translatedWords } from './edit/translation';
+import { zoomFactor, zoomSegments } from './edit/zoom';
 import { defaultCaptionPosition, framePanels, logoRect, OUTPUT_SIZES, resolveLayout, type ResolvedLayout } from './edit/layout';
 import {
   applyReframe,
@@ -118,6 +119,7 @@ export async function renderClipEdit(opts: {
       `:fontsdir='${escapeFfmpegFilterPath(fontsDir)}'`,
     logo,
     emojis,
+    zoom: layout === 'single' && edit.zoom !== 'off' ? { factor: zoomFactor(edit.zoom), segments: zoomSegments(spoken, duration) } : undefined,
   });
   // A clip with many cuts has a long graph: pass it as a file, not an argument.
   const graphPath = path.join(workDir, `${name}.filtergraph`);
