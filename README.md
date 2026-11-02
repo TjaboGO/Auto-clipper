@@ -37,6 +37,9 @@ och appen:
     eller i redigeraren, där du också kan rätta varje mening
 13. Exporterar undertexter (.srt och .vtt) och laddar ner alla klipp i en ZIP med undertexter och en
     fil med bildtexter och hashtags. Appen kan skyddas med ett lösenord
+14. Lägger emojis ovanför texten på starka ord (AI:n föreslår, du kan välja själv), har åtta
+    textstilar med animationer som Studs, Fram ord för ord och Neon, och kan zooma in automatiskt
+    ibland medan någon pratar
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -132,10 +135,19 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   klippkanter som ligger vid något som händer i bild. Sådana kanter flyttas bara utåt, aldrig
   inåt, så uppbyggnaden före ett mål och jublet efter blir kvar.
 - `src/lib/captions.ts` - bygger en `.ass`-undertextfil per klipp i vald stil: Karaoke (ordet som
-  sägs lyser), Box (färgad ruta bakom ordet), Pop (ordet växer), Ord för ord och Enkel, plus
-  rubriken överst. 20 fria typsnitt (SIL OFL och Apache 2.0, licenserna ligger i
+  sägs lyser), Box (färgad ruta bakom ordet), Pop (ordet växer), Ord för ord, Enkel, Studs
+  (texten studsar in), Fram ord för ord (orden dyker upp när de sägs) och Neon (en mjuk, lysande
+  kant), plus rubriken överst. Animationerna räknas ut på samma sätt i förhandsvisningen. 20 fria typsnitt (SIL OFL och Apache 2.0, licenserna ligger i
   `assets/fonts/licenses`) så texterna ser likadana ut på alla maskiner. Varje typsnitt har mått
   för storlek och bredd, så ett brett typsnitt får färre bokstäver per rad.
+- `src/lib/edit/emoji.ts` - emojis ovanför texten. En emoji sitter på ett ord, tonar in och glider
+  upp lite när ordet sägs, och ligger kvar tills den textsidan är klar. Bilderna är färdiga PNG:er
+  i `assets/emoji` (från Noto Color Emoji, licensen ligger bredvid), samma i förhandsvisningen och
+  i ffmpeg (ett lager per emoji). AI:n föreslår emojis när den väljer klippen, eller senare i
+  redigeraren.
+- `src/lib/edit/zoom.ts` - automatisk zoom i layouten Följ talaren: varannan mening visas närmare
+  och markerade nyckelord får en kort inzoomning, som när man klipper mellan två kameravinklar.
+  ffmpeg lägger en uppförstorad kopia av bilden ovanpå medan zoomen pågår.
 - `src/lib/brand.ts` + `src/lib/fontFile.ts` - varumärkespaketet i `storage/brand`: dina
   typsnitt, din logga och Min stil. Uppladdade typsnitt läses direkt i TypeScript (namn, radhöjd,
   versalhöjd, bokstavsbredd och om å, ä och ö finns), så de får samma mått som de inbyggda. Vid
@@ -234,8 +246,9 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
 - **Rörelseföljningen är enkel.** Den följer där det rör sig mest, så i en bild med rörelse
   överallt (publik, konfetti, snabba kameraåkningar) kan den välja fel. Då kan du beskära själv i
   redigeraren.
-- **Redigeraren har inte allt som Opus har.** Det finns ingen B-roll, musik, emojis,
-  övergångar eller publicering direkt till TikTok och YouTube. Delarna i split screen, facecam,
+- **Redigeraren har inte allt som Opus har.** Det finns ingen B-roll, musik, övergångar eller
+  publicering direkt till TikTok och YouTube. Emojierna är ett urval på drygt 100 vanliga, och
+  zoomen hoppar in och ut (ingen mjuk åkning). Delarna i split screen, facecam,
   skärm och grupp följer automatiskt och kan byta plats och storlek, men inte beskäras för hand.
   Loggan är en stillbild.
 - **Facecam och grupp bygger på ansiktena.** Webbkamera-rutan hittas från raka, fasta kanter, så en
@@ -299,6 +312,6 @@ ordtiming, `yt-dlp` för YouTube-nedladdning.
    Välja AI-modell per steg och byta standardmodell till Gemini 3.8 Flash. OpenRouter som valfri
    leverantör för klippvalet~~ (klar)
 8. ~~Lösenord för appen, översatta texter, SRT-export och alla klipp som ZIP~~ (klar)
-9. Emojis i texterna, fler textanimationer och automatisk zoom
+9. ~~Emojis i texterna, fler textanimationer och automatisk zoom~~ (klar)
 10. B-roll (till exempel från Pexels med din egen nyckel) och bakgrundsmusik
 11. Publicera direkt till YouTube, och export till Premiere och DaVinci Resolve
