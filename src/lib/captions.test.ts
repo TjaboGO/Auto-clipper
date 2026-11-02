@@ -144,3 +144,27 @@ test('a single word too long for the frame is shrunk to fit', () => {
   const scale = Number(/\\t\(0,100,\\fscx(\d+)/.exec(event.text)?.[1]);
   assert.ok(scale > 20 && scale < 100, `scaled to ${scale}%`);
 });
+
+test('studs: the page bounces in during its first word, then stays still', () => {
+  const words = [word('hej', 0, 0.5), word('på', 0.5, 0.7), word('dig', 0.7, 1.0)];
+  const [first, second] = dialogue(build(words, {}, 'bounce'));
+  assert.match(first.text, /\\fscx60\\fscy60\\t\(0,121,\\fscx112\\fscy112\)\\t\(121,220,\\fscx100\\fscy100\)/);
+  assert.doesNotMatch(second.text, /\\t\(/);
+});
+
+test('fram ord för ord: words not yet said are there but invisible', () => {
+  const words = [word('ett', 0, 0.4), word('två', 0.4, 0.8), word('tre', 0.8, 1.2)];
+  const events = dialogue(build(words, {}, 'reveal'));
+  assert.match(events[0].text, /ETT \{\\alpha&HFF&[^}]*\}TVÅ TRE$/);
+  assert.match(events[1].text, /TVÅ \{\\alpha&HFF&[^}]*\}TRE$/);
+  assert.doesNotMatch(events[2].text, /alpha/);
+});
+
+test('neon: the outline is the glow colour, softened, without a drop shadow', () => {
+  const ass = build([word('lyser', 0, 0.5)], {}, 'neon');
+  const style = ass.split('\n').find((l) => l.startsWith('Style: Caption,')) ?? '';
+  const fields = style.split(',');
+  assert.equal(fields[5], '&H00FFE500'); // #00E5FF as ASS (BGR)
+  assert.equal(fields[17], '0');
+  assert.match(dialogue(ass)[0].text, /\\blur\d/);
+});

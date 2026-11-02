@@ -122,8 +122,10 @@ export interface CaptionMetrics {
   maxChars: number;
   /** "Ord för ord": each word pops in from this scale. */
   popFrom: number;
-  /** "Pop": the word being said grows to this scale. */
+  /** "Pop" and "Neon": the word being said grows to this scale. */
   activeScale: number;
+  /** "Neon": how soft the glowing outline is (output px, 0 = no glow). */
+  glow: number;
 }
 
 /** `autoY`: where the captions go unless the user moved them (see defaultCaptionPosition). */
@@ -157,8 +159,45 @@ export function captionMetrics(
     maxWords: wordByWord ? 1 : settings.maxWords,
     maxChars: Math.max(6, Math.min(48, maxChars)),
     popFrom: 0.8,
-    activeScale: settings.preset === 'pop' ? 1.15 : 1,
+    activeScale: settings.preset === 'pop' ? 1.15 : settings.preset === 'neon' ? 1.08 : 1,
+    glow: settings.preset === 'neon' ? 0.09 * fontSize : 0,
   };
+}
+
+// "Studs": a page comes in small, overshoots and settles, in the first
+// BOUNCE_SECONDS (or the first word's time, if that is shorter).
+export const BOUNCE_SECONDS = 0.22;
+const BOUNCE_FROM = 0.6;
+const BOUNCE_PEAK = 1.12;
+const BOUNCE_PEAK_AT = 0.55;
+
+export function bounceDuration(page: CaptionPage): number {
+  return Math.min(BOUNCE_SECONDS, Math.max(0.05, page[0].until - page[0].start));
+}
+
+/** The page's size `elapsed` seconds after it came on (1 = normal). Straight lines between the steps, like libass's \t. */
+export function bounceScale(elapsed: number, duration: number): number {
+  if (elapsed >= duration) return 1;
+  const peakAt = BOUNCE_PEAK_AT * duration;
+  if (elapsed < peakAt) return BOUNCE_FROM + ((BOUNCE_PEAK - BOUNCE_FROM) * Math.max(0, elapsed)) / peakAt;
+  return BOUNCE_PEAK + ((1 - BOUNCE_PEAK) * (elapsed - peakAt)) / (duration - peakAt);
+}
+
+/** The ASS tags for the same bounce, scaled by `fit` (a long single word shrunk to fit). */
+export function bounceTags(duration: number, fit: number): string {
+  const pct = (s: number) => Math.round(s * fit * 100);
+  const peak = Math.round(BOUNCE_PEAK_AT * duration * 1000);
+  const end = Math.round(duration * 1000);
+  return (
+    `\\fscx${pct(BOUNCE_FROM)}\\fscy${pct(BOUNCE_FROM)}` +
+    `\\t(0,${peak},\\fscx${pct(BOUNCE_PEAK)}\\fscy${pct(BOUNCE_PEAK)})` +
+    `\\t(${peak},${end},\\fscx${pct(1)}\\fscy${pct(1)})`
+  );
+}
+
+/** "Fram ord för ord": words after the one being said aren't shown yet. */
+export function wordVisible(settings: CaptionSettings, i: number, active: number): boolean {
+  return settings.preset !== 'reveal' || active < 0 || i <= active;
 }
 
 /**
@@ -175,7 +214,8 @@ export function wordColor(
   word: PageWord,
   isActive: boolean,
 ): string {
-  if (isActive && settings.preset !== 'box' && captionPreset(settings.preset).usesHighlight) {
+  // Box and Neon use the colour for the box and the glow; the word itself stays as it is.
+  if (isActive && settings.preset !== 'box' && settings.preset !== 'neon' && captionPreset(settings.preset).usesHighlight) {
     return settings.highlightColor;
   }
   return word.emphasis ? settings.emphasisColor : settings.textColor;

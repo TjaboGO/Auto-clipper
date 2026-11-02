@@ -473,7 +473,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                 <ColorField label="Text" value={captions.textColor} onChange={(v, key) => setCaptions({ textColor: v }, key)} />
                 {preset.usesHighlight && (
                   <ColorField
-                    label={captions.preset === 'box' ? 'Rutan' : 'Ordet som sägs'}
+                    label={captions.preset === 'box' ? 'Rutan' : captions.preset === 'neon' ? 'Glöden' : 'Ordet som sägs'}
                     value={captions.highlightColor}
                     onChange={(v, key) => setCaptions({ highlightColor: v }, key)}
                   />

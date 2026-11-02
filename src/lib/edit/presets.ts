@@ -1,6 +1,7 @@
 import { allFonts } from './fonts';
 import { PANEL_SIZE_RANGE } from './layout';
 import { captionLanguage } from './translation';
+import { knownEmoji } from './emoji';
 import type {
   AspectRatio,
   BrandStyle,
@@ -21,7 +22,7 @@ export interface CaptionPreset {
   label: string;
   description: string;
   /** What picking the preset sets (position and on/off are kept). */
-  style: Omit<CaptionSettings, 'enabled' | 'preset' | 'position' | 'emphasisColor'>;
+  style: Omit<CaptionSettings, 'enabled' | 'preset' | 'position' | 'emphasisColor' | 'emojis'>;
   /** Whether the highlight colour does anything in this preset. */
   usesHighlight: boolean;
 }
@@ -62,6 +63,27 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
     style: { font: 'poppins', size: 0.85, textColor: '#FFFFFF', highlightColor: '#FFFFFF', uppercase: false, maxWords: 6 },
     usesHighlight: false,
   },
+  {
+    id: 'bounce',
+    label: 'Studs',
+    description: 'Texten studsar in, ordet som sägs lyser',
+    style: { font: 'lilita', size: 1.05, textColor: '#FFFFFF', highlightColor: '#FFD23F', uppercase: true, maxWords: 3 },
+    usesHighlight: true,
+  },
+  {
+    id: 'reveal',
+    label: 'Fram ord för ord',
+    description: 'Orden dyker upp när de sägs',
+    style: { font: 'montserrat', size: 1, textColor: '#FFFFFF', highlightColor: '#4ADE80', uppercase: true, maxWords: 4 },
+    usesHighlight: true,
+  },
+  {
+    id: 'neon',
+    label: 'Neon',
+    description: 'Texten lyser i din färg',
+    style: { font: 'kanit', size: 1, textColor: '#FFFFFF', highlightColor: '#00E5FF', uppercase: true, maxWords: 4 },
+    usesHighlight: true,
+  },
 ];
 
 export function captionPreset(id: string): CaptionPreset {
@@ -77,6 +99,7 @@ export function presetCaptions(id: CaptionPresetId, keep?: Partial<CaptionSettin
     preset: preset.id,
     position: keep?.position ?? null,
     emphasisColor: keep?.emphasisColor ?? DEFAULT_EMPHASIS_COLOR,
+    emojis: keep?.emojis ?? true,
     ...preset.style,
   };
 }
@@ -157,6 +180,7 @@ function sanitizeCaptions(raw: unknown, fallback: CaptionSettings): CaptionSetti
     emphasisColor: color(raw.emphasisColor, fallback.emphasisColor),
     uppercase: bool(raw.uppercase, fallback.uppercase),
     maxWords: Math.round(num(raw.maxWords, 1, 8, fallback.maxWords)),
+    emojis: bool(raw.emojis, fallback.emojis ?? true),
   };
 }
 
@@ -174,6 +198,7 @@ export function sanitizeLogo(raw: unknown, fallback: LogoSettings): LogoSettings
 export function upgradeEdit(edit: ClipEdit): ClipEdit {
   return {
     ...edit,
+    captions: { ...edit.captions, emojis: edit.captions.emojis ?? true },
     logo: sanitizeLogo(edit.logo, DEFAULT_LOGO),
     panelSize: panelSize(edit.panelSize, null),
     translation: sanitizeTranslation(edit.translation, null),
@@ -263,6 +288,8 @@ export function sanitizeEdit(
     if (typeof value.text === 'string') override.text = text(value.text, MAX_WORD_TEXT, '').trim();
     if (value.hidden === true) override.hidden = true;
     if (value.emphasis === true) override.emphasis = true;
+    const emoji = knownEmoji(value.emoji);
+    if (emoji) override.emoji = emoji;
     if (Object.keys(override).length > 0) words[id] = override;
   }
 

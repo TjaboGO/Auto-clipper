@@ -1,7 +1,16 @@
 // Canvas drawing for the editor's live preview. It mirrors the real render:
 // the same crop geometry as the ffmpeg graph (renderGraph.ts) and the same
 // caption pages, sizes and colours as the .ass file (captions.ts).
-import { pageScale, wordColor, type CaptionMetrics, type CaptionPage, type TitleMetrics } from '@/lib/edit/captionLayout';
+import {
+  bounceDuration,
+  bounceScale,
+  pageScale,
+  wordColor,
+  wordVisible,
+  type CaptionMetrics,
+  type CaptionPage,
+  type TitleMetrics,
+} from '@/lib/edit/captionLayout';
 import { cssFontFamily, type CaptionFont } from '@/lib/edit/fonts';
 import { cropLeft, fitRect, singleCrop, type OutputSize, type Panel, type ResolvedLayout } from '@/lib/edit/layout';
 import { cxAt } from '@/lib/edit/timeline';
@@ -220,6 +229,9 @@ export function drawCaptions(
   if (settings.preset === 'word' && index >= 0) {
     pop *= m.popFrom + (1 - m.popFrom) * Math.min(1, (o - page[index].start) / 0.1);
   }
+  if (settings.preset === 'bounce') pop *= bounceScale(o - page[0].start, bounceDuration(page));
+  // "Fram ord för ord": only the words said so far.
+  const shown = placed.filter((p) => wordVisible(settings, p.i, index));
   ctx.save();
   if (pop !== 1) {
     ctx.translate(m.centerX * k, m.centerY * k);
@@ -247,20 +259,32 @@ export function drawCaptions(
   const outline = 2 * m.outline * k;
   ctx.lineJoin = 'round';
   ctx.miterLimit = 2;
-  // Shadow of the outlined text, then the outline, then the letters.
-  const shadow = m.shadow * k;
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
   ctx.lineWidth = outline;
-  for (const p of placed) {
-    drawWord(p, shadow, shadow, (text) => {
-      ctx.strokeText(text, 0, 0);
-      ctx.fillText(text, 0, 0);
-    });
+  if (m.glow > 0) {
+    // Neon: a soft outline in the glow colour (libass blurs it the same way), no drop shadow.
+    ctx.save();
+    ctx.strokeStyle = settings.highlightColor;
+    ctx.shadowColor = settings.highlightColor;
+    ctx.shadowBlur = 2 * m.glow * k;
+    for (let pass = 0; pass < 2; pass++) {
+      for (const p of shown) drawWord(p, 0, 0, (text) => ctx.strokeText(text, 0, 0));
+    }
+    ctx.restore();
+  } else {
+    // Shadow of the outlined text, then the outline, then the letters.
+    const shadow = m.shadow * k;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    for (const p of shown) {
+      drawWord(p, shadow, shadow, (text) => {
+        ctx.strokeText(text, 0, 0);
+        ctx.fillText(text, 0, 0);
+      });
+    }
+    ctx.strokeStyle = '#000';
+    for (const p of shown) drawWord(p, 0, 0, (text) => ctx.strokeText(text, 0, 0));
   }
-  ctx.strokeStyle = '#000';
-  for (const p of placed) drawWord(p, 0, 0, (text) => ctx.strokeText(text, 0, 0));
-  for (const p of placed) {
+  for (const p of shown) {
     ctx.fillStyle = wordColor(settings, page[p.i], p.i === index);
     drawWord(p, 0, 0, (text) => ctx.fillText(text, 0, 0));
   }

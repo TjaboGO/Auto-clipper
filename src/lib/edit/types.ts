@@ -18,7 +18,7 @@ export type AspectRatio = '9:16' | '1:1' | '4:5' | '16:9';
  */
 export type LayoutMode = 'auto' | 'fill' | 'fit' | 'split' | 'facecam' | 'screen' | 'group';
 
-export type CaptionPresetId = 'karaoke' | 'box' | 'pop' | 'word' | 'clean';
+export type CaptionPresetId = 'karaoke' | 'box' | 'pop' | 'word' | 'clean' | 'bounce' | 'reveal' | 'neon';
 
 /** A caption font that comes with the app (see edit/fonts.ts). */
 export type BuiltInFontId =
@@ -62,6 +62,8 @@ export interface CaptionSettings {
   uppercase: boolean;
   /** At most this many words on screen at once. */
   maxWords: number;
+  /** Show the emojis put on words (see WordOverride.emoji). */
+  emojis: boolean;
 }
 
 /** A headline shown at the top of the clip (Opus calls it the hook). */
@@ -91,6 +93,8 @@ export interface WordOverride {
   hidden?: boolean;
   /** Shown in the emphasis colour. */
   emphasis?: boolean;
+  /** An emoji that pops up above the captions when the word is said (see edit/emoji.ts). */
+  emoji?: string;
 }
 
 /**

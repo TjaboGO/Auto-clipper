@@ -1,9 +1,12 @@
 import {
+  bounceDuration,
+  bounceTags,
   captionMetrics,
   captionPages,
   pageScale,
   titleMetrics,
   wordColor,
+  wordVisible,
   type CaptionMetrics,
   type CaptionPage,
 } from './edit/captionLayout';
@@ -70,7 +73,9 @@ function pageText(
     .map((word, i) => {
       const colour = wordColor(settings, word, i === active);
       const grow = i === active && metrics.activeScale !== 1;
-      let tags = '';
+      // "Fram ord för ord": everything after the word being said is invisible
+      // (it still takes its place, so the line doesn't move as words come).
+      let tags = !wordVisible(settings, i, active) && wordVisible(settings, i - 1, active) ? '\\alpha&HFF&' : '';
       if (colour !== current) {
         tags += `\\c${inlineColour(colour)}`;
         current = colour;
@@ -112,6 +117,7 @@ export function buildClipAss(opts: ClipAssOptions): string {
   const m = captionMetrics(captions, out, captionY, aspect);
   const t = titleMetrics(captions, title.duration, out, aspect, clipLength);
   const text = styleColour(captions.textColor);
+  const neon = captions.preset === 'neon';
 
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -122,7 +128,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Caption,${m.font.family},${n1(m.fontSize)},${text},${text},${OUTLINE_COLOUR},${SHADOW_COLOUR},0,0,0,0,100,100,0,0,1,${n1(m.outline)},${n1(m.shadow)},5,${Math.round(m.marginX)},${Math.round(m.marginX)},0,1
+Style: Caption,${m.font.family},${n1(m.fontSize)},${text},${text},${neon ? styleColour(captions.highlightColor) : OUTLINE_COLOUR},${SHADOW_COLOUR},0,0,0,0,100,100,0,0,1,${n1(m.outline)},${neon ? 0 : n1(m.shadow)},5,${Math.round(m.marginX)},${Math.round(m.marginX)},0,1
 Style: Box,${m.font.family},${n1(m.fontSize)},${text},${text},${styleColour(captions.highlightColor)},${styleColour(captions.highlightColor)},0,0,0,0,100,100,0,0,3,${n1(m.boxPad)},0,5,${Math.round(m.marginX)},${Math.round(m.marginX)},0,1
 Style: Title,${t.font.family},${n1(t.fontSize)},&H00141414,&H00141414,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,3,${n1(t.boxPad)},0,8,${Math.round(t.marginX)},${Math.round(t.marginX)},0,1
 
@@ -133,7 +139,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const lines: string[] = [];
   const dialogue = (layer: number, start: number, end: number, style: string, body: string) =>
     lines.push(`Dialogue: ${layer},${formatAssTime(start)},${formatAssTime(end)},${style},,0,0,0,,${body}`);
-  const pos = `\\an5\\pos(${n1(m.centerX)},${n1(m.centerY)})`;
+  // Neon: the outline is the glow, softened.
+  const pos = `\\an5\\pos(${n1(m.centerX)},${n1(m.centerY)})${neon ? `\\blur${n1(m.glow)}` : ''}`;
 
   if (captions.enabled) {
     const pages = captionPages(words, clipLength, {
@@ -164,7 +171,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         if (captions.preset === 'box') {
           dialogue(0, word.start, word.until, 'Box', `{${pos}${fitTags}\\1a&HFF&\\3a&HFF&\\4a&HFF&}${boxText(page, i)}`);
         }
-        dialogue(1, word.start, word.until, 'Caption', `{${pos}${fitTags}}${pageText(page, i, captions, m)}`);
+        // Studs: the page bounces in during its first word.
+        const size = captions.preset === 'bounce' && i === 0 ? bounceTags(bounceDuration(page), fit) : fitTags;
+        dialogue(1, word.start, word.until, 'Caption', `{${pos}${size}}${pageText(page, i, captions, m)}`);
       });
     }
   }

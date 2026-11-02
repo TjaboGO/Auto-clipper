@@ -27,7 +27,10 @@ export function StyleSample(props: { style: Pick<CaptionSettings, 'preset' | 'fo
       style={{
         fontFamily: props.fontsReady ? `"${cssFontFamily(font)}"` : undefined,
         color: style.textColor,
-        textShadow: '0 0 3px #000, 0 0 2px #000, 2px 2px 0 rgba(0,0,0,.6)',
+        textShadow:
+          style.preset === 'neon'
+            ? `0 0 2px ${style.highlightColor}, 0 0 6px ${style.highlightColor}, 0 0 10px ${style.highlightColor}`
+            : '0 0 3px #000, 0 0 2px #000, 2px 2px 0 rgba(0,0,0,.6)',
       }}
     >
       {first}{' '}
@@ -35,9 +38,11 @@ export function StyleSample(props: { style: Pick<CaptionSettings, 'preset' | 'fo
         style={
           style.preset === 'box'
             ? { background: style.highlightColor, padding: '0 4px' }
-            : preset.usesHighlight
-              ? { color: style.highlightColor }
-              : undefined
+            : style.preset === 'reveal'
+              ? { opacity: 0.25 }
+              : preset.usesHighlight && style.preset !== 'neon'
+                ? { color: style.highlightColor }
+                : undefined
         }
       >
         {style.preset === 'word' ? '' : second}
