@@ -1,4 +1,5 @@
 import { cropLeft, fitRect, singleCrop, type OutputSize, type Panel, type ResolvedLayout } from './edit/layout';
+import { EMOJI_POP, EMOJI_RISE } from './edit/emoji';
 import type { CropKeyframe, SourceInfo, TimeRange } from './edit/types';
 
 function num(n: number): string {
@@ -68,6 +69,11 @@ export interface RenderGraphInput {
   captionsFilter: string;
   /** Your logo (ffmpeg input 1), placed under the captions. */
   logo?: { rect: { x: number; y: number; w: number; h: number }; opacity: number };
+  /**
+   * Emojis over the captions: each a looped picture input (`input`), shown
+   * from `start` to `end` (clip timeline) at `rect`, popping in.
+   */
+  emojis?: { input: number; rect: { x: number; y: number; size: number }; start: number; end: number }[];
 }
 
 /** The video part of the graph up to the finished frame: crop, parts stacked together, or fit. */
@@ -134,7 +140,28 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
     video += `,select='${inside}',setpts='(T-(${offset}))/TB'`;
   }
   let graph = `${video},${input.captionsFilter}[vout]`;
-  if (input.logo) {
+  if (input.emojis?.length) {
+    // Picture layers one after the other, then the captions on top.
+    graph = `${video}[v0]`;
+    let current = 'v0';
+    if (input.logo) {
+      const { rect, opacity } = input.logo;
+      graph +=
+        `;[1:v]scale=${rect.w}:${rect.h},format=rgba,colorchannelmixer=aa=${num(opacity)}[logo]` +
+        `;[${current}][logo]overlay=${rect.x}:${rect.y}[vl]`;
+      current = 'vl';
+    }
+    input.emojis.forEach((e, i) => {
+      const rise = Math.round(EMOJI_RISE * e.rect.size);
+      graph +=
+        `;[${e.input}:v]format=rgba,scale=${e.rect.size}:${e.rect.size},` +
+        `fade=t=in:st=${num(e.start)}:d=${num(EMOJI_POP)}:alpha=1[em${i}]` +
+        `;[${current}][em${i}]overlay=x=${e.rect.x}:y='${e.rect.y}+${rise}*max(0,1-(t-${num(e.start)})/${num(EMOJI_POP)})'` +
+        `:enable='between(t,${num(e.start)},${num(e.end)})'[ve${i}]`;
+      current = `ve${i}`;
+    });
+    graph += `;[${current}]${input.captionsFilter}[vout]`;
+  } else if (input.logo) {
     const { rect, opacity } = input.logo;
     graph =
       `${video}[base];` +

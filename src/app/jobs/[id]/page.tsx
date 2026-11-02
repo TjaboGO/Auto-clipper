@@ -51,6 +51,7 @@ function optionLabels(options?: JobOptions, watched?: boolean): string[] {
     options.aspect,
     options.captionPreset === 'mine' ? 'Min stil' : captionPreset(options.captionPreset).label,
     options.keywords ? 'Nyckelord' : '',
+    options.emojis ? 'Emojis' : '',
     options.translate ? `Texter på ${captionLanguage(options.translate)?.label.toLowerCase() ?? options.translate}` : '',
     options.range ? `Del ${formatClock(options.range.start)}-${formatClock(options.range.end)}` : '',
   ].filter(Boolean);

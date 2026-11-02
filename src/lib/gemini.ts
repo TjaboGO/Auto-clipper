@@ -15,6 +15,7 @@ import {
 import { config } from './config';
 import { screenEdges } from './moments';
 import { openRouterJson } from './openrouter';
+import { EMOJIS, knownEmoji, MAX_EMOJIS } from './edit/emoji';
 import type { ClipSuggestion, TranscriptSegment, VisualKind, VisualMoment } from './types';
 
 let cachedClient: GoogleGenAI | null = null;
@@ -348,6 +349,38 @@ export function tidyMoments(raw: VisualMoment[], durationSec: number): VisualMom
   return result;
 }
 
+const emojiPickSchema: Schema = {
+  type: Type.OBJECT,
+  properties: { word: { type: Type.STRING }, emoji: { type: Type.STRING } },
+  required: ['word', 'emoji'],
+  propertyOrdering: ['word', 'emoji'],
+};
+
+/** Emoji picks with a word and an emoji there's an image for. */
+function cleanEmojiPicks(raw: unknown): { word: string; emoji: string }[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((p) => ({ word: typeof p?.word === 'string' ? p.word.trim() : '', emoji: knownEmoji(p?.emoji) }))
+    .filter((p): p is { word: string; emoji: string } => !!p.word && !!p.emoji && p.word.length <= 40)
+    .slice(0, MAX_EMOJIS);
+}
+
+/**
+ * Emojis for a clip's words, for the editor's "Föreslå emojis": the
+ * sentences of the clip in, picks of a word and an emoji out.
+ */
+export async function suggestEmojis(sentences: { id: number; text: string }[], seconds: number): Promise<{ word: string; emoji: string }[]> {
+  const count = Math.max(1, Math.min(MAX_EMOJIS, Math.round(seconds / 10)));
+  const prompt = `These sentences are said in a ${Math.round(seconds)} second short video. Pick about ${count} \
+words where an emoji shown over the captions adds something (a strong feeling, money, a number, a \
+reaction, food, a place). Each pick has a "word" (one single word from the sentences, copied \
+exactly) and an "emoji" from this list only: ${EMOJIS.join(' ')}
+
+${sentences.map((s) => s.text).join('\n')}`;
+  const raw = await textJson<unknown>(prompt, { type: Type.ARRAY, items: emojiPickSchema }, ThinkingLevel.LOW);
+  return cleanEmojiPicks(raw);
+}
+
 const highlightSchema: Schema = {
   type: Type.ARRAY,
   items: {
@@ -361,9 +394,10 @@ const highlightSchema: Schema = {
       viralityScore: { type: Type.INTEGER },
       reason: { type: Type.STRING },
       keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+      emojis: { type: Type.ARRAY, items: emojiPickSchema },
     },
-    required: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason', 'keywords'],
-    propertyOrdering: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason', 'keywords'],
+    required: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason', 'keywords', 'emojis'],
+    propertyOrdering: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason', 'keywords', 'emojis'],
   },
 };
 
@@ -454,6 +488,10 @@ Rules:
 word or a short phrase copied exactly as it is written in the transcript (key nouns, names, \
 numbers, strong or emotional words - never filler like "och", "att", "the"). They are \
 highlighted in the captions. Empty if nobody speaks in the clip.
+- "emojis" go over the captions when a word is said: about one per 8-12 seconds of clip, on \
+words where a picture adds something (a strong feeling, money, a number, a reaction, food, a \
+place). Each has a "word" (one single word said in the clip, copied exactly from the \
+transcript) and an "emoji" from this list only: ${EMOJIS.join(' ')}. Empty if nobody speaks.
 - Write title, caption, hashtags and reason in the same language as the transcript (Swedish if \
 nobody speaks).
 
@@ -600,6 +638,7 @@ export function cleanSuggestions(
               .filter((k) => k.length > 0 && k.length <= 40)
               .slice(0, 12)
           : [],
+        emojis: cleanEmojiPicks(c.emojis),
       };
     })
     .filter((c) => c.end - c.start >= minLength)

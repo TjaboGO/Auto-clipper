@@ -6,13 +6,16 @@ import { brandInfo, customFontPath, logoFile } from './brand';
 import { buildClipAss, escapeFfmpegFilterPath } from './captions';
 import { buildRenderGraph } from './renderGraph';
 import { captionFont, isCustomFontId } from './edit/fonts';
+import { captionMetrics, captionPages } from './edit/captionLayout';
+import { clipEmojiShows, emojiFile, emojiRect } from './edit/emoji';
+import { translatedWords } from './edit/translation';
 import { defaultCaptionPosition, framePanels, logoRect, OUTPUT_SIZES, resolveLayout, type ResolvedLayout } from './edit/layout';
 import {
   applyReframe,
   keptRanges,
   keyframesForRange,
   outputDuration,
-  captionWords,
+  outputWords,
 } from './edit/timeline';
 import type { ClipEdit, ClipEditorData } from './edit/types';
 
@@ -59,21 +62,30 @@ export async function renderClipEdit(opts: {
     panelSize: edit.panelSize,
   });
 
+  // The captions show the spoken words, or their translation.
+  const spoken = outputWords(edit, data.words, kept);
+  const words = translatedWords(spoken, edit.translation ?? null);
+  const captionY = defaultCaptionPosition(layout, edit.aspect, panels);
+
   fs.mkdirSync(workDir, { recursive: true });
   const assPath = path.join(workDir, `${name}.ass`);
   fs.writeFileSync(
     assPath,
-    buildClipAss({
-      words: captionWords(edit, data.words, kept),
-      clipLength: duration,
-      captions: edit.captions,
-      title: edit.title,
-      out,
-      captionY: defaultCaptionPosition(layout, edit.aspect, panels),
-      aspect: edit.aspect,
-    }),
+    buildClipAss({ words, clipLength: duration, captions: edit.captions, title: edit.title, out, captionY, aspect: edit.aspect }),
     'utf-8',
   );
+
+  // Emojis over the captions: one looped picture input each, after the logo.
+  const metrics = captionMetrics(edit.captions, out, captionY, edit.aspect);
+  const pages = captionPages(words, duration, { maxWords: metrics.maxWords, maxChars: metrics.maxChars, uppercase: edit.captions.uppercase });
+  const emojiInputs: string[] = [];
+  let nextInput = edit.logo.enabled && brand.logo ? 2 : 1;
+  const emojis = clipEmojiShows(edit, spoken, pages, duration).flatMap((show) => {
+    const file = path.join(config.emojiDir, emojiFile(show.emoji));
+    if (!fs.existsSync(file)) return [];
+    emojiInputs.push('-loop', '1', '-t', String(Math.max(0.2, length)), '-i', file);
+    return [{ input: nextInput++, rect: emojiRect(metrics), start: show.start, end: show.end }];
+  });
 
   // Framing keyframes are source times; ffmpeg's t starts at 0 at `start`.
   const auto = data.analysis?.keyframes ?? [];
@@ -105,6 +117,7 @@ export async function renderClipEdit(opts: {
       `ass=filename='${escapeFfmpegFilterPath(assPath)}'` +
       `:fontsdir='${escapeFfmpegFilterPath(fontsDir)}'`,
     logo,
+    emojis,
   });
   // A clip with many cuts has a long graph: pass it as a file, not an argument.
   const graphPath = path.join(workDir, `${name}.filtergraph`);
@@ -119,6 +132,7 @@ export async function renderClipEdit(opts: {
       '-t', String(Math.max(0.2, length)),
       '-i', sourcePath,
       ...(logo ? ['-i', logoFile()] : []),
+      ...emojiInputs,
       '-filter_complex_script', graphPath,
       ...maps,
       '-c:v', 'libx264',

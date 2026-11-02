@@ -113,3 +113,26 @@ export function keywordWordIds(words: { id: string; text: string }[], keywords: 
   }
   return ids;
 }
+
+/**
+ * Emoji picks (a word and an emoji) on word ids: each on the first word of
+ * the clip that matches and has no emoji yet, at most one emoji a sentence
+ * so they don't pile up.
+ */
+export function emojiWordIds(
+  words: { id: string; text: string; seg: number }[],
+  picks: { word: string; emoji: string }[],
+): Record<string, string> {
+  const norm = words.map((w) => normalizeWord(w.text));
+  const out: Record<string, string> = {};
+  const usedSegs = new Set<number>();
+  for (const pick of picks) {
+    const target = normalizeWord(pick.word);
+    if (!target) continue;
+    const i = norm.findIndex((n, k) => n === target && !out[words[k].id] && !usedSegs.has(words[k].seg));
+    if (i < 0) continue;
+    out[words[i].id] = pick.emoji;
+    usedSegs.add(words[i].seg);
+  }
+  return out;
+}

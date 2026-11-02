@@ -5,6 +5,7 @@
 // everywhere.
 import type { CaptionMetrics, CaptionPage } from './captionLayout';
 import type { OutputWord } from './timeline';
+import type { ClipEdit } from './types';
 
 /** The emojis there are images for. */
 export const EMOJIS = (
@@ -29,6 +30,13 @@ export function emojiFile(emoji: string): string {
     .filter((cp) => cp !== 0xfe0f)
     .map((cp) => cp.toString(16))
     .join('-')}.png`;
+}
+
+/** The emojis put on words: word id -> emoji. */
+export function wordEmojis(edit: Pick<ClipEdit, 'words'>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [id, o] of Object.entries(edit.words)) if (o.emoji) out[id] = o.emoji;
+  return out;
 }
 
 export interface EmojiShow {
@@ -72,6 +80,17 @@ export function emojiShows(
       return { emoji: s.emoji, start: s.start, end };
     })
     .filter((s) => s.end - s.start >= 0.2);
+}
+
+/** The clip's emojis, if its captions show them. `spoken`: the spoken words; `pages`: what the captions show. */
+export function clipEmojiShows(
+  edit: Pick<ClipEdit, 'words' | 'captions'>,
+  spoken: OutputWord[],
+  pages: CaptionPage[],
+  clipLength: number,
+): EmojiShow[] {
+  if (!edit.captions.enabled || edit.captions.emojis === false) return [];
+  return emojiShows(spoken, wordEmojis(edit), pages, clipLength);
 }
 
 /** Where the emoji goes: centered just above a two-line caption, a bit bigger than the text. */

@@ -53,6 +53,8 @@ export interface JobOptions {
   visual: VisualMode;
   /** Translate the captions into this language (a CAPTION_LANGUAGES code), or '' to keep the spoken one. */
   translate: string;
+  /** Put the AI's emojis over the captions. */
+  emojis: boolean;
 }
 
 export const MAX_TOPIC_LENGTH = 200;
@@ -69,6 +71,7 @@ export function defaultJobOptions(): JobOptions {
     range: null,
     visual: 'auto',
     translate: '',
+    emojis: false,
   };
 }
 
@@ -110,6 +113,7 @@ export function sanitizeJobOptions(raw: unknown): JobOptions {
     range,
     visual: pick(raw.visual, VISUAL_MODES.map((m) => m.id), defaults.visual),
     translate: pick(raw.translate, ['', ...CAPTION_LANGUAGES.map((l) => l.code)], defaults.translate),
+    emojis: typeof raw.emojis === 'boolean' ? raw.emojis : defaults.emojis,
   };
 }
 

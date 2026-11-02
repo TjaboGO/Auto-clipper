@@ -138,7 +138,8 @@ export function Transcript(props: TranscriptProps) {
                   onDoubleClick={() => props.onEditing(i)}
                 >
                   {text}
-                </span>{' '}
+                </span>
+                {override?.emoji && inClip && !isRemoved && <span className="text-sm" title="Emoji ovanför texten">{override.emoji}</span>}{' '}
               </span>
             );
           })}

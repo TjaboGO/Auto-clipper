@@ -60,3 +60,22 @@ test('a translation from the editor is checked: known language, text per sentenc
   assert.equal(sanitizeTranslation(null, { lang: 'en', segments: {} }), null);
   assert.deepEqual(sanitizeTranslation('nope', { lang: 'de', segments: {} }), { lang: 'de', segments: {} });
 });
+
+test('emojis: from their word until the caption page is done, never two at once', async () => {
+  const { emojiShows, emojiFile, knownEmoji, emojiPop } = await import('./emoji');
+  const words = [w('Pengar', 0, 0.5), w('är', 0.5, 0.7), w('kul', 0.7, 1.2), w('ja', 3, 3.3, 1)];
+  const pages = [
+    [{ text: 'Pengar', start: 0, until: 0.5, emphasis: false }, { text: 'är', start: 0.5, until: 0.7, emphasis: false }, { text: 'kul', start: 0.7, until: 1.5, emphasis: false }],
+    [{ text: 'ja', start: 3, until: 3.6, emphasis: false }],
+  ];
+  const shows = emojiShows(words, { '0:Pengar': '💰', '0:kul': '😂', '1:ja': 'nope' }, pages, 10);
+  assert.deepEqual(shows, [
+    { emoji: '💰', start: 0, end: 0.7 }, // cut short by the next emoji
+    { emoji: '😂', start: 0.7, end: 1.5 },
+  ]);
+  assert.equal(emojiFile('❤️'), '2764.png');
+  assert.equal(knownEmoji('❤'), '❤️');
+  assert.equal(knownEmoji('🦄'), null);
+  assert.deepEqual(emojiPop(0, 100), { alpha: 0, dy: 18 });
+  assert.deepEqual(emojiPop(1, 100), { alpha: 1, dy: 0 });
+});

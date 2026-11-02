@@ -60,6 +60,8 @@ interface SettingsPanelProps {
   sentences: { id: number; text: string }[];
   /** Translate the captions into a language (puts the translation in the edit). */
   onTranslate: (lang: string) => Promise<void>;
+  /** Let the AI put emojis on words; returns how many. */
+  onSuggestEmojis: () => Promise<number>;
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -181,11 +183,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const camPossible = !!facecam && splitAllowed(edit.aspect);
   const groupSize = props.analysis?.group?.length ?? 0;
   const { brand, onBrand } = props;
-  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | 'translate' | null>(null);
+  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | 'translate' | 'emoji' | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const setLogo = (patch: Partial<LogoSettings>, key?: string) => set({ ...edit, logo: { ...edit.logo, ...patch } }, key);
 
-  async function run(what: 'font' | 'logo' | 'style' | 'translate', job: () => Promise<string | null>) {
+  async function run(what: 'font' | 'logo' | 'style' | 'translate' | 'emoji', job: () => Promise<string | null>) {
     setBusy(what);
     setMessage(null);
     try {
@@ -227,6 +229,13 @@ export function SettingsPanel(props: SettingsPanelProps) {
       return 'Sparad som Min stil. Välj Min stil när du skapar klipp, så får de den här looken.';
     });
 
+  const removeEmojis = () => {
+    const words: ClipEdit['words'] = {};
+    for (const [id, { emoji: _emoji, ...rest }] of Object.entries(edit.words)) {
+      if (Object.keys(rest).length > 0) words[id] = rest;
+    }
+    set({ ...edit, words });
+  };
   const translation = edit.translation;
   const translateTo = (lang: string) => {
     if (!lang) {
@@ -343,6 +352,34 @@ export function SettingsPanel(props: SettingsPanelProps) {
         {tab === 'text' && (
           <>
             <Toggle label="Visa undertexter" checked={captions.enabled} onChange={(v) => setCaptions({ enabled: v })} />
+            <Section title="Emojis">
+              <Toggle label="Visa emojis" checked={captions.emojis !== false} onChange={(v) => setCaptions({ emojis: v })} />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={busy === 'emoji'}
+                  onClick={() =>
+                    run('emoji', async () => {
+                      const count = await props.onSuggestEmojis();
+                      return `AI:n satte ${count} ${count === 1 ? 'emoji' : 'emojis'}. Byt eller ta bort en genom att markera ordet i transkriptet.`;
+                    })
+                  }
+                  className="rounded-md px-2.5 py-1 text-xs font-medium bg-base-800 hover:bg-base-700 disabled:opacity-50"
+                >
+                  {busy === 'emoji' ? 'Letar ...' : 'Föreslå emojis med AI'}
+                </button>
+                {Object.values(edit.words).some((o) => o.emoji) && (
+                  <button
+                    type="button"
+                    onClick={removeEmojis}
+                    className="rounded-md px-2.5 py-1 text-xs text-gray-300 hover:text-white"
+                  >
+                    Ta bort alla
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">Markera ett ord i transkriptet för att välja en egen emoji.</p>
+            </Section>
             <Section title="Språk">
               <div className="flex gap-2">
                 <select

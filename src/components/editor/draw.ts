@@ -92,6 +92,23 @@ export function drawLogo(
   ctx.restore();
 }
 
+/** An emoji over the captions, `dy` px below its place and `alpha` visible while it pops in. */
+export function drawEmoji(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  rect: { x: number; y: number; size: number },
+  dy: number,
+  alpha: number,
+  k: number,
+): void {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(image, rect.x * k, (rect.y + dy) * k, rect.size * k, rect.size * k);
+  ctx.restore();
+}
+
 /** Manual framing: the whole source frame with the crop window on it. */
 export function drawCropView(
   ctx: CanvasRenderingContext2D,

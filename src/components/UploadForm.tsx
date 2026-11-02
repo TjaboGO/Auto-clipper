@@ -189,6 +189,7 @@ export function UploadForm() {
     options.aspect,
     options.captionPreset === 'mine' ? 'Min stil' : captionPreset(options.captionPreset).label,
     options.keywords ? 'nyckelord' : null,
+    options.emojis ? 'emojis' : null,
     options.visual === 'on' ? 'bildanalys' : options.visual === 'off' ? 'ingen bildanalys' : null,
     options.translate ? `texter på ${captionLanguage(options.translate)?.label.toLowerCase()}` : null,
     from || to ? `${from || '0:00'}-${to || 'slut'}` : null,
@@ -334,6 +335,18 @@ export function UploadForm() {
                 type="checkbox"
                 checked={options.keywords}
                 onChange={(e) => set({ keywords: e.target.checked })}
+                className="mt-1 h-4 w-4 accent-accent-500"
+              />
+            </label>
+            <label className="flex items-start justify-between gap-4 cursor-pointer">
+              <span>
+                <span className="block text-sm">Emojis i texten</span>
+                <span className="block text-xs text-gray-400">AI:n lägger en emoji ovanför texten på starka ord.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={options.emojis}
+                onChange={(e) => set({ emojis: e.target.checked })}
                 className="mt-1 h-4 w-4 accent-accent-500"
               />
             </label>

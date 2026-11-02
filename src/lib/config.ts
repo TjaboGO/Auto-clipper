@@ -66,6 +66,8 @@ export const config = {
   // face-tracked crop. Both resolve against the app root, which is also the
   // working directory of the standalone server in the Docker image.
   fontsDir: path.join(process.cwd(), 'assets', 'fonts'),
+  // Emoji images for the captions (see edit/emoji.ts).
+  emojiDir: path.join(process.cwd(), 'assets', 'emoji'),
   smartCropScript: path.join(process.cwd(), 'scripts', 'smart_crop.py'),
   // YuNet face detector (OpenCV Zoo, MIT license) used by smart_crop.py.
   faceModel: path.join(process.cwd(), 'assets', 'models', 'face_detection_yunet_2023mar.onnx'),

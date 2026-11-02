@@ -6,7 +6,8 @@ import { captionMetrics, captionPages, titleMetrics } from '@/lib/edit/captionLa
 import { defaultCaptionPosition, framePanels, OUTPUT_SIZES, resolveLayout, singleCrop } from '@/lib/edit/layout';
 import { MIN_CLIP_SECONDS } from '@/lib/edit/presets';
 import { CAPTION_FONTS, setCustomFonts } from '@/lib/edit/fonts';
-import { sentencesToTranslate } from '@/lib/edit/translation';
+import { sentencesToTranslate, translatedWords } from '@/lib/edit/translation';
+import { clipEmojiShows, EMOJIS, emojiRect } from '@/lib/edit/emoji';
 import {
   applyReframe,
   clipWords,
@@ -14,7 +15,7 @@ import {
   endAfterWord,
   keptRanges,
   outputDuration,
-  captionWords,
+  outputWords,
   removedWordIds,
   startBeforeWord,
   toOutputTime,
@@ -44,6 +45,7 @@ function withOverrides(edit: ClipEdit, ids: string[], change: (o: WordOverride) 
     if (next.text !== undefined) clean.text = next.text;
     if (next.hidden) clean.hidden = true;
     if (next.emphasis) clean.emphasis = true;
+    if (next.emoji) clean.emoji = next.emoji;
     if (Object.keys(clean).length > 0) words[id] = clean;
     else delete words[id];
   }
@@ -83,6 +85,7 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [cropMode, setCropMode] = useState(false);
+  const [emojiPicker, setEmojiPicker] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [renderError, setRenderError] = useState<string | null>(null);
   const [rendered, setRendered] = useState(false);
@@ -101,7 +104,9 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
   const cuts = useMemo(() => computeCuts(edit, words), [edit, words]);
   const kept = useMemo(() => keptRanges(edit, words), [edit, words]);
   const duration = outputDuration(kept);
-  const outWords = useMemo(() => captionWords(edit, words, kept), [edit, words, kept]);
+  // The spoken words (for the emojis) and what the captions show: those words, or their translation.
+  const spokenWords = useMemo(() => outputWords(edit, words, kept), [edit, words, kept]);
+  const outWords = useMemo(() => translatedWords(spokenWords, edit.translation ?? null), [spokenWords, edit.translation]);
   const panels = useMemo(
     () =>
       framePanels({
@@ -127,6 +132,10 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
         uppercase: edit.captions.uppercase,
       }),
     [outWords, duration, metrics, edit.captions.uppercase],
+  );
+  const emojis = useMemo(
+    () => clipEmojiShows(edit, spokenWords, pages, duration),
+    [edit, spokenWords, pages, duration],
   );
   const titleM = useMemo(
     () => titleMetrics(edit.captions, edit.title.duration, out, edit.aspect, duration),
@@ -290,6 +299,29 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
 
   const toggleHidden = () => set(withOverrides(edit, selectedIds, (o) => ({ ...o, hidden: !allHidden })));
   const toggleEmphasis = () => set(withOverrides(edit, selectedIds, (o) => ({ ...o, emphasis: !allEmphasis })));
+  // A new selection closes the emoji picker.
+  useEffect(() => setEmojiPicker(false), [from, to]);
+  const setEmoji = (emoji: string | undefined) => {
+    set(withOverrides(edit, selectedIds.slice(0, 1), (o) => ({ ...o, emoji })));
+    setEmojiPicker(false);
+  };
+  const suggestEmojis = useCallback(async () => {
+    const res = await fetch(`/api/jobs/${jobId}/clips/${clip.id}/emojis`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ edit: editRef.current }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? 'Kunde inte hämta emojis.');
+    const current = editRef.current;
+    const picks = body.emojis as Record<string, string>;
+    let next = current;
+    for (const [wordId, emoji] of Object.entries(picks)) {
+      next = withOverrides(next, [wordId], (o) => ({ ...o, emoji }));
+    }
+    set({ ...next, captions: { ...next.captions, emojis: true } });
+    return Object.keys(picks).length;
+  }, [jobId, clip.id, set]);
   const startHere = () => {
     const start = startBeforeWord(words, from, data.window);
     if (start < edit.end - MIN_CLIP_SECONDS) set({ ...edit, start });
@@ -490,6 +522,11 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
               <ToolButton onClick={toggleHidden}>{allHidden ? 'Visa i texten' : 'Dölj i texten'}</ToolButton>
               <ToolButton onClick={toggleEmphasis}>{allEmphasis ? 'Avmarkera' : 'Markera'}</ToolButton>
               {selected.length === 1 && <ToolButton onClick={() => setEditing(from)}>Rätta</ToolButton>}
+              {selected.length === 1 && (
+                <ToolButton onClick={() => setEmojiPicker(!emojiPicker)} title="En emoji ovanför texten när ordet sägs">
+                  {edit.words[selected[0].id]?.emoji ?? 'Emoji'}
+                </ToolButton>
+              )}
               <ToolButton onClick={startHere} title="Klippet börjar vid det första markerade ordet">
                 Börja här
               </ToolButton>
@@ -500,7 +537,29 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
                 ✕
               </button>
             </div>
-          ) : (
+          ) : null}
+          {selection && emojiPicker && selected.length === 1 && (
+            <div className="mb-3 rounded-lg bg-base-800/70 p-2" role="dialog" aria-label="Välj emoji">
+              <div className="grid grid-cols-10 gap-0.5 max-h-40 overflow-y-auto">
+                {EMOJIS.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    onClick={() => setEmoji(e)}
+                    className={`rounded text-lg leading-8 hover:bg-white/15 ${edit.words[selected[0].id]?.emoji === e ? 'bg-accent-500/40' : ''}`}
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+              {edit.words[selected[0].id]?.emoji && (
+                <button type="button" onClick={() => setEmoji(undefined)} className="mt-1 text-xs text-gray-300 hover:text-white">
+                  Ingen emoji
+                </button>
+              )}
+            </div>
+          )}
+          {!selection && (
             <p className="text-xs text-gray-500 mb-3">
               Markera ord för att klippa bort dem, dölja dem i texten eller rätta stavningen. Dubbelklicka
               för att rätta. Grå text ligger utanför klippet.
@@ -544,6 +603,8 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             onTime={setTime}
             fontsReady={fontsReady}
             logo={brand.logo}
+            emojis={emojis}
+            emojiRect={emojiRect(metrics)}
           />
         </section>
 
@@ -564,6 +625,7 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             onBrand={updateBrand}
             sentences={sentences}
             onTranslate={translate}
+            onSuggestEmojis={suggestEmojis}
           />
         </aside>
       </div>

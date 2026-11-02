@@ -11,7 +11,7 @@ import { analyzeVideo, transcribeAudio, findHighlights, translateSentences } fro
 import { analyzeFraming } from './smartCrop';
 import { renderClipEdit } from './render';
 import { dropSource, sourceAvailable, writeClipEdit, writeEditorData, writeRenderedEdit } from './editor';
-import { buildEditorWords, editWindow, keywordWordIds, needsFramingAnalysis } from './editorWords';
+import { buildEditorWords, editWindow, emojiWordIds, keywordWordIds, needsFramingAnalysis } from './editorWords';
 import { defaultEdit, withStyle } from './edit/presets';
 import { brandInfo, brandStyle } from './brand';
 import { clipWords } from './edit/timeline';
@@ -275,6 +275,11 @@ async function renderSuggestions(opts: {
       if (options.keywords && suggestion.keywords?.length) {
         for (const wordId of keywordWordIds(spoken, suggestion.keywords)) {
           edit.words[wordId] = { emphasis: true };
+        }
+      }
+      if (options.emojis && suggestion.emojis?.length) {
+        for (const [wordId, emoji] of Object.entries(emojiWordIds(spoken, suggestion.emojis))) {
+          edit.words[wordId] = { ...edit.words[wordId], emoji };
         }
       }
       // Nobody talks in the clip: show its title instead of empty captions.

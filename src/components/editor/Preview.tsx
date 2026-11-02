@@ -5,7 +5,8 @@ import type { CaptionMetrics, CaptionPage, TitleMetrics } from '@/lib/edit/capti
 import { cxAt, playableTime, toOutputTime, toSourceTime } from '@/lib/edit/timeline';
 import { logoRect } from '@/lib/edit/layout';
 import type { ClipEdit, LogoImage, TimeRange } from '@/lib/edit/types';
-import { drawCaptions, drawCropView, drawFrame, drawLogo, drawTitle, type FrameSpec } from './draw';
+import { drawCaptions, drawCropView, drawEmoji, drawFrame, drawLogo, drawTitle, type FrameSpec } from './draw';
+import { emojiFile, emojiPop, type EmojiShow } from '@/lib/edit/emoji';
 import { formatTime } from './format';
 import type { PreviewInfo } from './types';
 
@@ -37,6 +38,9 @@ interface PreviewProps {
   fontsReady: boolean;
   /** Your logo, if you've uploaded one (edit.logo says whether it shows). */
   logo: LogoImage | null;
+  /** Emojis over the captions (clip timeline), and where they go. */
+  emojis: EmojiShow[];
+  emojiRect: { x: number; y: number; size: number };
 }
 
 export function Preview(props: PreviewProps) {
@@ -52,6 +56,8 @@ export function Preview(props: PreviewProps) {
   const [size, setSize] = useState({ w: 0, h: 0 });
   const logoImage = useRef<HTMLImageElement | null>(null);
   const [logoLoads, setLogoLoads] = useState(0);
+  const emojiImages = useRef(new Map<string, HTMLImageElement>());
+  const [emojiLoads, setEmojiLoads] = useState(0);
 
   const sourceTime = () => propsRef.current.windowStart + (videoRef.current?.currentTime ?? 0);
 
@@ -72,6 +78,12 @@ export function Preview(props: PreviewProps) {
     if (o !== null) {
       if (p.edit.logo.enabled && p.logo && logoImage.current) {
         drawLogo(ctx, logoImage.current, logoRect(p.spec.out, p.logo, p.edit.logo), p.edit.logo.opacity, k);
+      }
+      for (const show of p.emojis) {
+        const image = emojiImages.current.get(emojiFile(show.emoji));
+        if (o < show.start || o >= show.end || !image?.complete || !image.naturalWidth) continue;
+        const { alpha, dy } = emojiPop(o - show.start, p.emojiRect.size);
+        drawEmoji(ctx, image, p.emojiRect, dy, alpha, k);
       }
       drawCaptions(ctx, p.pages, o, p.edit.captions, p.metrics, p.spec.out, k);
       if (p.edit.title.enabled && o < p.titleMetrics.until) {
@@ -191,6 +203,18 @@ export function Preview(props: PreviewProps) {
     return () => video.removeEventListener('loadedmetadata', start);
   }, [props.preview.url, seek]);
 
+  // The emoji images the clip uses, each loaded once.
+  useEffect(() => {
+    for (const show of props.emojis) {
+      const file = emojiFile(show.emoji);
+      if (emojiImages.current.has(file)) continue;
+      const image = new Image();
+      image.onload = () => setEmojiLoads((n) => n + 1);
+      image.src = `/api/emoji/${file}`;
+      emojiImages.current.set(file, image);
+    }
+  }, [props.emojis]);
+
   // The logo image, loaded again only when it's replaced.
   const logoVersion = props.logo?.version;
   useEffect(() => {
@@ -207,7 +231,7 @@ export function Preview(props: PreviewProps) {
   // Redraw whenever anything that shows changes.
   useEffect(() => {
     draw();
-  }, [draw, props.spec, props.edit, props.pages, props.metrics, props.cropMode, props.fontsReady, props.logo, logoLoads, size]);
+  }, [draw, props.spec, props.edit, props.pages, props.metrics, props.cropMode, props.fontsReady, props.logo, logoLoads, props.emojis, emojiLoads, size]);
 
   // If the start of the clip was just cut away (or moved later), don't sit
   // on something that's no longer in it: go to the new first frame.

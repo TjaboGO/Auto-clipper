@@ -50,6 +50,8 @@ export interface ClipSuggestion {
   reason: string;
   /** The clip's key words (copied from the transcript), shown in the emphasis colour. */
   keywords?: string[];
+  /** Emojis for strong words of the clip (each word copied from the transcript). */
+  emojis?: { word: string; emoji: string }[];
 }
 
 export interface RenderedClip extends ClipSuggestion {
