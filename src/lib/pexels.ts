@@ -125,21 +125,21 @@ export async function searchVideos(query: string, orientation: 'portrait' | 'lan
 
 const MAX_DOWNLOAD_BYTES = 150 * 1024 * 1024;
 
+/** Where a downloaded stock video is kept, or null if `file` isn't one of ours. */
 export function brollPath(file: string): string | null {
-  if (!/^pexels-\d+\.mp4$/.test(file)) return null;
-  return path.join(/* turbopackIgnore: true */ config.brollDir, file);
+  return /^pexels-\d+\.mp4$/.test(file) ? path.join(/* turbopackIgnore: true */ config.brollDir, path.basename(file)) : null;
 }
 
 /** Download a result once (later calls find it on disk). Only Pexels' own video addresses are fetched. */
 export async function downloadVideo(video: BrollVideo): Promise<string> {
-  const target = brollPath(video.file);
-  if (!target) throw new Error('Ogiltigt B-roll-klipp.');
-  if (fs.existsSync(target)) return target;
+  if (!brollPath(video.file)) throw new Error('Ogiltigt B-roll-klipp.');
+  const target = path.join(/* turbopackIgnore: true */ config.brollDir, path.basename(video.file));
+  if (fs.existsSync(/* turbopackIgnore: true */ target)) return target;
   const url = new URL(video.download);
   const allowed = url.protocol === 'https:' && (url.hostname.endsWith('.pexels.com') || url.hostname === 'pexels.com');
   const testing = config.pexelsApiUrl !== 'https://api.pexels.com' && url.origin === new URL(config.pexelsApiUrl).origin;
   if (!allowed && !testing) throw new Error('B-roll kan bara hämtas från Pexels.');
-  const res = await fetch(url);
+  const res = await fetch(url.href);
   if (!res.ok || !res.body) throw new Error(`Kunde inte hämta videon från Pexels (${res.status}).`);
   if (Number(res.headers.get('content-length') || 0) > MAX_DOWNLOAD_BYTES) throw new Error('Videon är för stor.');
   fs.mkdirSync(config.brollDir, { recursive: true });

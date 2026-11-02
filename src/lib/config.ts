@@ -47,7 +47,7 @@ export const config = {
   youtubeCookiesFromEnv: !!process.env.YTDLP_COOKIES,
   // Pexels (free stock video) for B-roll: a key from PEXELS_API_KEY, or one
   // saved on the settings page. The API address can be changed for tests.
-  pexelsKeyFile: path.join(storageDir, 'pexels-key.txt'),
+  pexelsKeyFile: path.join(/* turbopackIgnore: true */ storageDir, 'pexels-key.txt'),
   pexelsKeyFromEnv: process.env.PEXELS_API_KEY || '',
   pexelsApiUrl: (process.env.PEXELS_API_URL || 'https://api.pexels.com').replace(/\/+$/, ''),
   brollDir: path.join(/* turbopackIgnore: true */ storageDir, 'broll'),

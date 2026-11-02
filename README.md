@@ -40,6 +40,8 @@ och appen:
 14. Lägger emojis ovanför texten på starka ord (AI:n föreslår, du kan välja själv), har åtta
     textstilar med animationer som Studs, Fram ord för ord och Neon, och kan zooma in automatiskt
     ibland medan någon pratar
+15. Lägger in B-roll, gratis videoklipp från Pexels som visar det som sägs (AI:n väljer, eller du
+    söker själv), och bakgrundsmusik från dina egna låtar som sänks automatiskt när någon pratar
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -148,6 +150,14 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
 - `src/lib/edit/zoom.ts` - automatisk zoom i layouten Följ talaren: varannan mening visas närmare
   och markerade nyckelord får en kort inzoomning, som när man klipper mellan två kameravinklar.
   ffmpeg lägger en uppförstorad kopia av bilden ovanpå medan zoomen pågår.
+- `src/lib/pexels.ts` + `src/lib/brollSuggest.ts` + `src/lib/edit/broll.ts` - B-roll. AI:n väljer
+  ord där en stockvideo skulle visa vad som sägs och en sökning på engelska, appen söker på Pexels
+  med din nyckel, väljer filen närmast 1080p och sparar den i `storage/broll` (en gång per video).
+  En B-roll sitter på ett ord och fyller bilden i några sekunder, under logga, emojis och text.
+  Klippets eget ljud hörs som vanligt. Den som filmat krediteras i redigeraren och i klipp.txt.
+- Bakgrundsmusik (i `src/lib/brand.ts` och `src/lib/renderGraph.ts`) - dina egna låtar sparas som
+  AAC. Vid rendering loopas låten till klippets längd, tonas in och ut och trycks ner med en
+  sidechain-kompressor medan någon pratar.
 - `src/lib/brand.ts` + `src/lib/fontFile.ts` - varumärkespaketet i `storage/brand`: dina
   typsnitt, din logga och Min stil. Uppladdade typsnitt läses direkt i TypeScript (namn, radhöjd,
   versalhöjd, bokstavsbredd och om å, ä och ö finns), så de får samma mått som de inbyggda. Vid
@@ -246,8 +256,10 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
 - **Rörelseföljningen är enkel.** Den följer där det rör sig mest, så i en bild med rörelse
   överallt (publik, konfetti, snabba kameraåkningar) kan den välja fel. Då kan du beskära själv i
   redigeraren.
-- **Redigeraren har inte allt som Opus har.** Det finns ingen B-roll, musik, övergångar eller
-  publicering direkt till TikTok och YouTube. Emojierna är ett urval på drygt 100 vanliga, och
+- **Redigeraren har inte allt som Opus har.** Det finns inga övergångar eller publicering direkt
+  till TikTok och YouTube. B-roll kommer bara från Pexels och kräver en egen (gratis) nyckel, och
+  det finns ingen inbyggd musik: du laddar upp egna låtar. I förhandsvisningen hörs musiken utan
+  sänkningen under tal. Emojierna är ett urval på drygt 100 vanliga, och
   zoomen hoppar in och ut (ingen mjuk åkning). Delarna i split screen, facecam,
   skärm och grupp följer automatiskt och kan byta plats och storlek, men inte beskäras för hand.
   Loggan är en stillbild.
@@ -285,7 +297,8 @@ på OpenRouters modellsida, till exempel `google/gemini-3.8-flash`) går klippva
 istället. Bara texten skickas dit, ljud och video går fortfarande till Gemini, så
 `GEMINI_API_KEY` behövs ändå. `WORD_TIMING` och `WHISPER_MODEL` styr ordtimingen, och
 `SOURCE_RETENTION_DAYS` hur länge källvideon sparas för redigeraren. `APP_PASSWORD` sätter ett
-lösenord för hela appen (tomt = öppen). `YTDLP_COOKIES` kan peka på en
+lösenord för hela appen (tomt = öppen). `PEXELS_API_KEY` är nyckeln för B-roll (annars kan den
+sparas på inställningssidan). `YTDLP_COOKIES` kan peka på en
 egen cookies.txt för YouTube (annars sparas cookies från inställningssidan i
 `storage/youtube-cookies.txt`).
 
@@ -313,5 +326,5 @@ ordtiming, `yt-dlp` för YouTube-nedladdning.
    leverantör för klippvalet~~ (klar)
 8. ~~Lösenord för appen, översatta texter, SRT-export och alla klipp som ZIP~~ (klar)
 9. ~~Emojis i texterna, fler textanimationer och automatisk zoom~~ (klar)
-10. B-roll (till exempel från Pexels med din egen nyckel) och bakgrundsmusik
+10. ~~B-roll (till exempel från Pexels med din egen nyckel) och bakgrundsmusik~~ (klar)
 11. Publicera direkt till YouTube, och export till Premiere och DaVinci Resolve

@@ -40,7 +40,7 @@ import type {
   LogoSettings,
   SourceInfo,
 } from '@/lib/edit/types';
-import { formatTime } from './format';
+import { formatOffset, formatTime } from './format';
 
 type Tab = 'text' | 'layout' | 'title' | 'logo' | 'sound' | 'broll';
 
@@ -845,7 +845,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
                       className={`w-full rounded-md border px-3 py-2 text-left text-sm ${edit.music?.track === t.id ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
                     >
                       <span className="block truncate">{t.name}</span>
-                      <span className="block text-xs text-gray-400">{formatTime(t.duration)}</span>
+                      <span className="block text-xs text-gray-400">{formatOffset(t.duration)}</span>
                     </button>
                   ))}
                 </div>
