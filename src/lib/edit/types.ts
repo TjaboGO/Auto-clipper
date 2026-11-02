@@ -137,6 +137,8 @@ export interface ClipEdit {
   zoom: ZoomLevel;
   /** Background music, or null. */
   music: ClipMusic | null;
+  /** Stock video over parts of the clip. */
+  broll: BrollItem[];
 }
 
 /** Translated captions: each transcript sentence (by its index) in another language. */
@@ -171,6 +173,36 @@ export interface MusicTrack {
   /** Seconds. */
   duration: number;
   addedAt: string;
+}
+
+/** A stock video from Pexels, as found by a search. */
+export interface BrollVideo {
+  /** "pexels-" + its Pexels id. */
+  id: string;
+  /** The file in storage/broll once downloaded ("pexels-<id>.mp4"). */
+  file: string;
+  width: number;
+  height: number;
+  /** Seconds. */
+  duration: number;
+  /** A still from it. */
+  thumb: string;
+  /** Who filmed it (Pexels asks for credit), and their page. */
+  author: string;
+  authorUrl: string;
+  /** The video's page on Pexels. */
+  pageUrl: string;
+  /** Where the file is downloaded from. */
+  download: string;
+}
+
+/** Stock video over part of a clip: from a word on, for `duration` seconds of the finished clip. */
+export interface BrollItem {
+  video: BrollVideo;
+  wordId: string;
+  duration: number;
+  /** What it was found with. */
+  query: string;
 }
 
 /** Background music under a clip: which of your tracks, and how loud. */

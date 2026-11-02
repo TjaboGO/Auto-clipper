@@ -381,6 +381,37 @@ ${sentences.map((s) => s.text).join('\n')}`;
   return cleanEmojiPicks(raw);
 }
 
+const brollPickSchema: Schema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: { word: { type: Type.STRING }, query: { type: Type.STRING } },
+    required: ['word', 'query'],
+    propertyOrdering: ['word', 'query'],
+  },
+};
+
+/**
+ * Where stock video (B-roll) would show what is said in a clip: a word
+ * where it starts, and an English search for a stock video site.
+ */
+export async function suggestBroll(sentences: { id: number; text: string }[], seconds: number): Promise<{ word: string; query: string }[]> {
+  const count = Math.max(1, Math.min(4, Math.round(seconds / 15)));
+  const prompt = `These sentences are said in a ${Math.round(seconds)} second short video. Pick ${count} \
+moments where a few seconds of stock video (B-roll) over the speaker would show what is being \
+talked about: concrete things, places, actions or feelings, not abstract words. Spread them \
+over the video. Each pick has a "word" (one single word from the sentences, copied exactly, where \
+the B-roll starts) and a "query": 2-4 English words to search a stock video site with \
+(for example "counting money cash", "city traffic night").
+
+${sentences.map((s) => s.text).join('\n')}`;
+  const raw = await textJson<{ word?: unknown; query?: unknown }[]>(prompt, brollPickSchema, ThinkingLevel.LOW);
+  return (Array.isArray(raw) ? raw : [])
+    .map((p) => ({ word: typeof p?.word === 'string' ? p.word.trim() : '', query: typeof p?.query === 'string' ? p.query.trim().slice(0, 80) : '' }))
+    .filter((p) => p.word && p.query)
+    .slice(0, 4);
+}
+
 const highlightSchema: Schema = {
   type: Type.ARRAY,
   items: {

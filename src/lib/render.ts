@@ -10,6 +10,8 @@ import { captionMetrics, captionPages } from './edit/captionLayout';
 import { clipEmojiShows, emojiFile, emojiRect } from './edit/emoji';
 import { translatedWords } from './edit/translation';
 import { zoomFactor, zoomSegments } from './edit/zoom';
+import { brollShows } from './edit/broll';
+import { brollPath, downloadVideo } from './pexels';
 import { defaultCaptionPosition, framePanels, logoRect, OUTPUT_SIZES, resolveLayout, type ResolvedLayout } from './edit/layout';
 import {
   applyReframe,
@@ -87,6 +89,17 @@ export async function renderClipEdit(opts: {
     emojiInputs.push('-loop', '1', '-t', String(Math.max(0.2, length)), '-i', file);
     return [{ input: nextInput++, rect: emojiRect(metrics), start: show.start, end: show.end }];
   });
+  // Stock video: each one looped (if it's short) and cut to its time on screen.
+  const brollInputs: string[] = [];
+  const shows = brollShows(edit, spoken, duration);
+  // A clip saved on another machine (or before a cleanup) fetches its stock video again.
+  await Promise.all(shows.map((show) => downloadVideo(show.video).catch((err) => console.warn('[render] B-roll missing:', err))));
+  const broll = shows.flatMap((show) => {
+    const file = brollPath(show.video.file);
+    if (!file || !fs.existsSync(file)) return [];
+    brollInputs.push('-stream_loop', '-1', '-t', String(show.end - show.start), '-i', file);
+    return [{ input: nextInput++, start: show.start, end: show.end }];
+  });
   // Background music: looped and cut to the finished clip's length.
   const track = edit.music ? musicTrack(edit.music.track) : null;
   const musicInputs = track ? ['-stream_loop', '-1', '-t', String(Math.max(0.2, duration)), '-i', track.path] : [];
@@ -123,6 +136,7 @@ export async function renderClipEdit(opts: {
       `:fontsdir='${escapeFfmpegFilterPath(fontsDir)}'`,
     logo,
     emojis,
+    broll,
     music,
     zoom: layout === 'single' && edit.zoom !== 'off' ? { factor: zoomFactor(edit.zoom), segments: zoomSegments(spoken, duration) } : undefined,
   });
@@ -140,6 +154,7 @@ export async function renderClipEdit(opts: {
       '-i', sourcePath,
       ...(logo ? ['-i', logoFile()] : []),
       ...emojiInputs,
+      ...brollInputs,
       ...musicInputs,
       '-filter_complex_script', graphPath,
       ...maps,

@@ -9,6 +9,8 @@ import type {
   CaptionPresetId,
   CaptionTranslation,
   ClipMusic,
+  BrollItem,
+  BrollVideo,
   CaptionSettings,
   ClipEdit,
   LayoutMode,
@@ -140,6 +142,7 @@ export function defaultEdit(opts: {
     translation: null,
     zoom: opts.zoom ?? 'off',
     music: opts.music ?? null,
+    broll: [],
   };
 }
 
@@ -210,7 +213,51 @@ export function upgradeEdit(edit: ClipEdit): ClipEdit {
     translation: sanitizeTranslation(edit.translation, null),
     zoom: oneOf(edit.zoom, ZOOM_LEVELS.map((l) => l.id), 'off'),
     music: sanitizeMusic(edit.music, null),
+    broll: sanitizeBroll(edit.broll, []),
   };
+}
+
+export const BROLL_DURATION = { min: 1, max: 8, default: 3 };
+const MAX_BROLL = 12;
+
+const str = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
+
+/** One Pexels result, checked (null if it isn't one). */
+export function sanitizeBrollVideo(raw: unknown): BrollVideo | null {
+  if (!isObject(raw) || typeof raw.id !== 'string') return null;
+  const id = /^pexels-(\d{1,15})$/.exec(raw.id)?.[1];
+  const https = (v: unknown) => (typeof v === 'string' && /^https?:\/\//.test(v) ? v.slice(0, 500) : '');
+  if (!id || raw.file !== `pexels-${id}.mp4` || !https(raw.download)) return null;
+  return {
+    id: raw.id,
+    file: raw.file,
+    width: Math.round(num(raw.width, 16, 8192, 1080)),
+    height: Math.round(num(raw.height, 16, 8192, 1920)),
+    duration: num(raw.duration, 1, 3600, 10),
+    thumb: https(raw.thumb),
+    author: str(raw.author, 80) || 'Pexels',
+    authorUrl: https(raw.authorUrl) || 'https://www.pexels.com',
+    pageUrl: https(raw.pageUrl) || 'https://www.pexels.com',
+    download: https(raw.download),
+  };
+}
+
+/** B-roll as sent from the editor: known videos on words, durations within limits. */
+export function sanitizeBroll(value: unknown, fallback: BrollItem[], wordIds?: Set<string>): BrollItem[] {
+  if (!Array.isArray(value)) return fallback;
+  const items: BrollItem[] = [];
+  for (const raw of value.slice(0, MAX_BROLL)) {
+    if (!isObject(raw) || typeof raw.wordId !== 'string' || (wordIds && !wordIds.has(raw.wordId))) continue;
+    const video = sanitizeBrollVideo(raw.video);
+    if (!video) continue;
+    items.push({
+      video,
+      wordId: raw.wordId,
+      duration: num(raw.duration, BROLL_DURATION.min, BROLL_DURATION.max, BROLL_DURATION.default),
+      query: str(raw.query, 100),
+    });
+  }
+  return items;
 }
 
 export const DEFAULT_MUSIC_VOLUME = 0.3;
@@ -348,5 +395,6 @@ export function sanitizeEdit(
     translation: sanitizeTranslation(raw.translation, fallback.translation ?? null),
     zoom: oneOf(raw.zoom, ZOOM_LEVELS.map((l) => l.id), fallback.zoom ?? 'off'),
     music: sanitizeMusic(raw.music, fallback.music ?? null),
+    broll: sanitizeBroll(raw.broll, fallback.broll ?? [], wordIds),
   };
 }

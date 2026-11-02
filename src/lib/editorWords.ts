@@ -136,3 +136,16 @@ export function emojiWordIds(
   }
   return out;
 }
+
+/** The first word of the clip matching each pick (one word each, in order), or null. */
+export function pickWordIds(words: { id: string; text: string }[], picks: { word: string }[]): (string | null)[] {
+  const norm = words.map((w) => normalizeWord(w.text));
+  const used = new Set<string>();
+  return picks.map((pick) => {
+    const target = normalizeWord(pick.word);
+    const i = norm.findIndex((n, k) => n === target && !used.has(words[k].id));
+    if (!target || i < 0) return null;
+    used.add(words[i].id);
+    return words[i].id;
+  });
+}

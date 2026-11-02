@@ -45,6 +45,12 @@ export const config = {
   // YTDLP_COOKIES points at a file of your own (then the page can't change it).
   youtubeCookiesFile: process.env.YTDLP_COOKIES || path.join(storageDir, 'youtube-cookies.txt'),
   youtubeCookiesFromEnv: !!process.env.YTDLP_COOKIES,
+  // Pexels (free stock video) for B-roll: a key from PEXELS_API_KEY, or one
+  // saved on the settings page. The API address can be changed for tests.
+  pexelsKeyFile: path.join(storageDir, 'pexels-key.txt'),
+  pexelsKeyFromEnv: process.env.PEXELS_API_KEY || '',
+  pexelsApiUrl: (process.env.PEXELS_API_URL || 'https://api.pexels.com').replace(/\/+$/, ''),
+  brollDir: path.join(/* turbopackIgnore: true */ storageDir, 'broll'),
 
   // Long audio is transcribed in chunks of this many seconds. Keeps every
   // Gemini response far below the output token limit and keeps timestamps

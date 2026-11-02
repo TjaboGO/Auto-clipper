@@ -79,6 +79,8 @@ export interface RenderGraphInput {
   zoom?: { factor: number; segments: TimeRange[] };
   /** Background music: an audio input looped and cut to the clip's length, and its level. */
   music?: { input: number; volume: number };
+  /** Stock video over parts of the clip: each a video input, filling the frame from `start` to `end`. */
+  broll?: { input: number; start: number; end: number }[];
 }
 
 /** The video part of the graph up to the finished frame: crop, parts stacked together, or fit. */
@@ -158,10 +160,18 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
       `[wide][closer]overlay=0:0:enable='${when}'`;
   }
   let graph = `${video},${input.captionsFilter}[vout]`;
-  if (input.emojis?.length) {
-    // Picture layers one after the other, then the captions on top.
+  if (input.emojis?.length || input.broll?.length) {
+    // Layers one after the other - B-roll, logo, emojis - then the captions on top.
     graph = `${video}[v0]`;
     let current = 'v0';
+    const { w, h } = input.out;
+    (input.broll ?? []).forEach((b, i) => {
+      graph +=
+        `;[${b.input}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,` +
+        `setpts=PTS-STARTPTS+${num(b.start)}/TB[br${i}]` +
+        `;[${current}][br${i}]overlay=0:0:eof_action=pass:enable='between(t,${num(b.start)},${num(b.end)})'[vb${i}]`;
+      current = `vb${i}`;
+    });
     if (input.logo) {
       const { rect, opacity } = input.logo;
       graph +=
@@ -169,7 +179,7 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
         `;[${current}][logo]overlay=${rect.x}:${rect.y}[vl]`;
       current = 'vl';
     }
-    input.emojis.forEach((e, i) => {
+    (input.emojis ?? []).forEach((e, i) => {
       const rise = Math.round(EMOJI_RISE * e.rect.size);
       graph +=
         `;[${e.input}:v]format=rgba,scale=${e.rect.size}:${e.rect.size},` +
