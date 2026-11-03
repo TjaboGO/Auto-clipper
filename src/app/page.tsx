@@ -7,6 +7,9 @@ export default function HomePage() {
   return (
     <main className="relative flex flex-col items-center px-4 py-16 md:py-24">
       <div className="absolute top-4 right-4 flex gap-4">
+        <Link href="/kalender" className="text-sm text-gray-400 hover:text-white">
+          Kalender
+        </Link>
         <Link href="/settings" className="text-sm text-gray-400 hover:text-white">
           Inställningar
         </Link>

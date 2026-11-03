@@ -446,10 +446,21 @@ export async function uploadToYoutube(file: string, meta: YoutubeRequest, opts: 
 const globalForUploads = globalThis as unknown as { __autoClipperUploads?: Queue };
 const uploadQueue = (globalForUploads.__autoClipperUploads ??= new Queue(1));
 
+/** Earlier uploads kept per clip. */
+const HISTORY = 20;
+
 function setUpload(jobId: string, clipId: string, upload: YoutubeUpload): void {
   const job = jobStore.get(jobId);
   if (!job?.clips) return;
-  jobStore.update(jobId, { clips: job.clips.map((c) => (c.id === clipId ? { ...c, youtube: upload } : c)) });
+  jobStore.update(jobId, {
+    clips: job.clips.map((c) => {
+      if (c.id !== clipId) return c;
+      // A new upload moves a finished one to the history.
+      const startingOver = upload.status === 'queued' && c.youtube?.status === 'done';
+      const youtubeHistory = startingOver ? [c.youtube as YoutubeUpload, ...(c.youtubeHistory ?? [])].slice(0, HISTORY) : c.youtubeHistory;
+      return { ...c, youtube: upload, ...(youtubeHistory ? { youtubeHistory } : {}) };
+    }),
+  });
 }
 
 export function videoUrl(videoId: string, short: boolean): string {

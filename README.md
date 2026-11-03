@@ -46,6 +46,8 @@ och appen:
     (XML), videon redan inramad, texterna som ett eget genomskinligt lager, B-roll och musik
 17. Publicerar klipp direkt på din YouTube-kanal, eller schemalägger dem, med titel, beskrivning
     och hashtags ifyllda (och #Shorts för stående klipp)
+18. Visar vad poängen bygger på (krok, flyt, värde och trend), låter dig sortera klippen, och har
+    en kalender med allt du schemalagt och publicerat
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -252,6 +254,7 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   dig till Google), `DELETE /api/youtube/account` (koppla från). Per klipp:
   `GET /api/jobs/<id>/clips/<clipId>/youtube` (förslag på titel och text) och `POST` med
   `{ "title", "description", "tags", "privacy": "public|unlisted|private", "publishAt" }`.
+  `GET /api/youtube/uploads` listar alla uppladdningar (för kalendern).
 
 ## Kända begränsningar (värt att veta)
 

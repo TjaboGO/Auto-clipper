@@ -16,7 +16,7 @@ import { config } from './config';
 import { screenEdges } from './moments';
 import { openRouterJson } from './openrouter';
 import { EMOJIS, knownEmoji, MAX_EMOJIS } from './edit/emoji';
-import type { ClipSuggestion, TranscriptSegment, VisualKind, VisualMoment } from './types';
+import type { ClipScores, ClipSuggestion, TranscriptSegment, VisualKind, VisualMoment } from './types';
 
 let cachedClient: GoogleGenAI | null = null;
 
@@ -412,6 +412,19 @@ ${sentences.map((s) => s.text).join('\n')}`;
     .slice(0, 4);
 }
 
+/** The four sub-scores, each a whole number 0-100, or undefined if any is missing. */
+export function cleanScores(raw: unknown): ClipScores | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: Partial<ClipScores> = {};
+  for (const key of ['hook', 'flow', 'value', 'trend'] as const) {
+    const n = Number(r[key]);
+    if (!Number.isFinite(n)) return undefined;
+    out[key] = Math.max(0, Math.min(100, Math.round(n)));
+  }
+  return out as ClipScores;
+}
+
 const highlightSchema: Schema = {
   type: Type.ARRAY,
   items: {
@@ -422,13 +435,24 @@ const highlightSchema: Schema = {
       title: { type: Type.STRING },
       caption: { type: Type.STRING },
       hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
+      scores: {
+        type: Type.OBJECT,
+        properties: {
+          hook: { type: Type.INTEGER },
+          flow: { type: Type.INTEGER },
+          value: { type: Type.INTEGER },
+          trend: { type: Type.INTEGER },
+        },
+        required: ['hook', 'flow', 'value', 'trend'],
+        propertyOrdering: ['hook', 'flow', 'value', 'trend'],
+      },
       viralityScore: { type: Type.INTEGER },
       reason: { type: Type.STRING },
       keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
       emojis: { type: Type.ARRAY, items: emojiPickSchema },
     },
-    required: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason', 'keywords', 'emojis'],
-    propertyOrdering: ['start', 'end', 'title', 'caption', 'hashtags', 'viralityScore', 'reason', 'keywords', 'emojis'],
+    required: ['start', 'end', 'title', 'caption', 'hashtags', 'scores', 'viralityScore', 'reason', 'keywords', 'emojis'],
+    propertyOrdering: ['start', 'end', 'title', 'caption', 'hashtags', 'scores', 'viralityScore', 'reason', 'keywords', 'emojis'],
   },
 };
 
@@ -513,7 +537,12 @@ Rules:
 - "title" is a short punchy label for the clip (max ~8 words).
 - "caption" is a ready-to-post social caption (1-2 sentences, can include an emoji).
 - "hashtags" is 3-6 relevant lowercase hashtags without the # symbol.
-- "viralityScore" is your 0-100 estimate of how well this clip would perform.
+- "scores" rates four sides of the clip, each 0-100: "hook" (do the first three seconds make \
+someone stop scrolling), "flow" (does it stand on its own, with a clear start, no dead air and a \
+payoff at the end), "value" (does the viewer get something: a laugh, an insight, a feeling, a \
+surprise) and "trend" (is it a topic and format people share a lot right now).
+- "viralityScore" is your 0-100 estimate of how well this clip would perform, in line with the \
+scores (the hook counts the most).
 - "reason" is one short sentence on why you picked it${topic ? ' and how it matches what the viewer is looking for' : ''}.
 - "keywords" is the words that carry the clip: about one per 5-8 seconds of clip, each a single \
 word or a short phrase copied exactly as it is written in the transcript (key nouns, names, \
@@ -661,6 +690,7 @@ export function cleanSuggestions(
               .slice(0, 8)
           : [],
         viralityScore: Math.max(0, Math.min(100, Math.round(Number(c.viralityScore) || 0))),
+        ...(cleanScores(c.scores) ? { scores: cleanScores(c.scores) } : {}),
         reason: typeof c.reason === 'string' ? c.reason.trim() : '',
         keywords: Array.isArray(c.keywords)
           ? c.keywords

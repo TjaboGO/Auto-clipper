@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { ProjectExport } from './ProjectExport';
+import { ScoreBadge } from './ScoreBadge';
 import { YoutubePublish } from './YoutubePublish';
-import type { YoutubeUpload } from '@/lib/types';
+import type { ClipScores, YoutubeUpload } from '@/lib/types';
 
 interface Clip {
   id: string;
@@ -13,6 +14,8 @@ interface Clip {
   caption: string;
   hashtags: string[];
   viralityScore: number;
+  scores?: ClipScores;
+  reason?: string;
   durationSec: number;
   layout?: string;
   version?: number;
@@ -60,9 +63,7 @@ export function ClipCard({ jobId, clip, onChange }: { jobId: string; clip: Clip;
       <div className="p-4 flex-1 flex flex-col gap-3">
         <div className="flex items-start justify-between gap-2">
           <h3 className="font-semibold text-sm leading-snug">{clip.title}</h3>
-          <span className="shrink-0 text-xs font-medium px-2 py-1 rounded-full bg-accent-500/20 text-accent-300">
-            {clip.viralityScore}
-          </span>
+          <ScoreBadge score={clip.viralityScore} scores={clip.scores} reason={clip.reason} />
         </div>
         {(clip.version ?? 1) > 1 && <p className="text-xs text-gray-500">Redigerad version</p>}
         {clip.renderState?.status === 'error' && (

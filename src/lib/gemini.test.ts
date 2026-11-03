@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ThinkingLevel } from '@google/genai';
-import { cleanSuggestions, thinking, tidyMoments, type HighlightOptions } from './gemini';
+import { cleanScores, cleanSuggestions, thinking, tidyMoments, type HighlightOptions } from './gemini';
 import type { ClipSuggestion, TranscriptSegment, VisualMoment } from './types';
 
 // Ten 10-second segments: 100 s of transcript starting at 20 s.
@@ -123,4 +123,11 @@ test('a thinking level for Gemini 3 and newer, whichever step the model is for',
   assert.deepEqual(thinking('gemini-3.1-pro', ThinkingLevel.MEDIUM), { thinkingLevel: ThinkingLevel.MEDIUM });
   assert.equal(thinking('gemini-2.5-flash', ThinkingLevel.LOW), undefined);
   assert.equal(thinking('something-else', ThinkingLevel.LOW), undefined);
+});
+
+test('the four sub-scores are whole numbers 0-100, or left out', () => {
+  assert.deepEqual(cleanScores({ hook: 91.6, flow: '70', value: -5, trend: 140 }), { hook: 92, flow: 70, value: 0, trend: 100 });
+  assert.equal(cleanScores({ hook: 80, flow: 70, value: 60 }), undefined);
+  assert.equal(cleanScores('high'), undefined);
+  assert.equal(cleanScores(null), undefined);
 });

@@ -47,11 +47,25 @@ export interface ClipSuggestion {
   hashtags: string[];
   /** 0-100, how likely Gemini thinks this clip is to perform well. */
   viralityScore: number;
+  /** What the score is made of (missing on older clips). */
+  scores?: ClipScores;
   reason: string;
   /** The clip's key words (copied from the transcript), shown in the emphasis colour. */
   keywords?: string[];
   /** Emojis for strong words of the clip (each word copied from the transcript). */
   emojis?: { word: string; emoji: string }[];
+}
+
+/** Four sides of a clip, each 0-100. */
+export interface ClipScores {
+  /** Do the first seconds stop the scroll. */
+  hook: number;
+  /** Does it stand on its own, without dead air, with a payoff. */
+  flow: number;
+  /** Does the viewer get something out of it. */
+  value: number;
+  /** Is it something people share right now. */
+  trend: number;
 }
 
 export interface RenderedClip extends ClipSuggestion {
@@ -70,6 +84,8 @@ export interface RenderedClip extends ClipSuggestion {
   editedAt?: string;
   /** The latest upload to YouTube, if any. */
   youtube?: YoutubeUpload;
+  /** Earlier finished uploads of the clip, newest first (for the calendar). */
+  youtubeHistory?: YoutubeUpload[];
 }
 
 export type YoutubePrivacy = 'public' | 'unlisted' | 'private';

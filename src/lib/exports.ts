@@ -51,7 +51,10 @@ export function clipsSummary(job: Job): string {
     lines.push(
       `${clipFileBase(clip, i)}`,
       `  Längd: ${formatSeconds(clip.durationSec)} (från ${formatSeconds(clip.start)} i videon)`,
-      `  Viralitet: ${clip.viralityScore}/100`,
+      `  Viralitet: ${clip.viralityScore}/100` +
+        (clip.scores
+          ? ` (krok ${clip.scores.hook}, flyt ${clip.scores.flow}, värde ${clip.scores.value}, trend ${clip.scores.trend})`
+          : ''),
       ...(language ? [`  Texter på: ${language.label.toLowerCase()}`] : []),
       ...brollCredits(job.id, clip.id),
       `  Bildtext: ${clip.caption}`,

@@ -9,7 +9,7 @@ import { SearchMore } from '@/components/SearchMore';
 import { captionPreset } from '@/lib/edit/presets';
 import { clipLength, formatClock, type JobOptions } from '@/lib/jobOptions';
 import { captionLanguage } from '@/lib/edit/translation';
-import type { YoutubeUpload } from '@/lib/types';
+import type { ClipScores, YoutubeUpload } from '@/lib/types';
 
 interface Clip {
   id: string;
@@ -18,6 +18,9 @@ interface Clip {
   caption: string;
   hashtags: string[];
   viralityScore: number;
+  scores?: ClipScores;
+  reason?: string;
+  start: number;
   durationSec: number;
   version?: number;
   editable?: boolean;
@@ -63,6 +66,25 @@ function optionLabels(options?: JobOptions, watched?: boolean): string[] {
 }
 
 /** A clip is being rendered again or uploaded to YouTube: keep the page up to date. */
+type ClipSort = 'score' | 'time' | 'short' | 'long';
+
+const SORTS: Record<ClipSort, string> = {
+  score: 'Bäst först',
+  time: 'I videons ordning',
+  short: 'Kortast först',
+  long: 'Längst först',
+};
+
+function sortClips(clips: Clip[], sort: ClipSort): Clip[] {
+  const by: Record<ClipSort, (a: Clip, b: Clip) => number> = {
+    score: (a, b) => b.viralityScore - a.viralityScore,
+    time: (a, b) => a.start - b.start,
+    short: (a, b) => a.durationSec - b.durationSec,
+    long: (a, b) => b.durationSec - a.durationSec,
+  };
+  return [...clips].sort(by[sort]);
+}
+
 const rendering = (job: JobData) =>
   job.clips?.some(
     (c) =>
@@ -79,6 +101,7 @@ export default function JobPage() {
   const [deleting, setDeleting] = useState(false);
   // Bumped to start polling again (after starting a search for more clips).
   const [pollKey, setPollKey] = useState(0);
+  const [sort, setSort] = useState<ClipSort>('score');
 
   useEffect(() => {
     let cancelled = false;
@@ -202,9 +225,28 @@ export default function JobPage() {
         </div>
       )}
 
+      {clips.length > 1 && (
+        <div className="flex justify-end mt-8 -mb-4">
+          <label className="text-xs text-gray-400 flex items-center gap-2">
+            Sortera
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as ClipSort)}
+              className="rounded-md bg-base-800 px-2 py-1 text-sm text-gray-200"
+            >
+              {(Object.keys(SORTS) as ClipSort[]).map((key) => (
+                <option key={key} value={key}>
+                  {SORTS[key]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
       {clips.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
-          {clips.map((clip) => (
+          {sortClips(clips, sort).map((clip) => (
             <ClipCard key={clip.id} jobId={job.id} clip={clip} onChange={() => setPollKey((k) => k + 1)} />
           ))}
         </div>
