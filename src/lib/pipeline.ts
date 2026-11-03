@@ -13,7 +13,7 @@ import { renderClipEdit } from './render';
 import { dropSource, sourceAvailable, writeClipEdit, writeEditorData, writeRenderedEdit } from './editor';
 import { buildEditorWords, editWindow, emojiWordIds, keywordWordIds, needsFramingAnalysis } from './editorWords';
 import { DEFAULT_MUSIC_VOLUME, defaultEdit, withStyle } from './edit/presets';
-import { brandInfo, brandStyle, musicTrack } from './brand';
+import { brandInfo, brandStyle, brandTemplate, musicTrack } from './brand';
 import { clipWords } from './edit/timeline';
 import { captionLanguage, sentencesToTranslate } from './edit/translation';
 import { suggestClipBroll } from './brollSuggest';
@@ -23,6 +23,7 @@ import {
   clipLength,
   defaultJobOptions,
   formatClock,
+  isTemplateChoice,
   MIN_RANGE_SECONDS,
   type ClipLengthId,
   type JobOptions,
@@ -232,8 +233,13 @@ async function renderSuggestions(opts: {
     logProgress(jobId, 'rendering', describeTiming(timing.clips, timing.problem));
   }
 
-  // "Min stil": the look saved in the editor (the karaoke style if it's gone).
-  const mine = options.captionPreset === 'mine' ? brandStyle() : null;
+  // "Min stil" or a template: a look saved in the editor (the karaoke style if it's gone).
+  const mine =
+    options.captionPreset === 'mine'
+      ? brandStyle()
+      : isTemplateChoice(options.captionPreset)
+        ? brandTemplate(options.captionPreset)
+        : null;
   const hasLogo = !!brandInfo().logo;
   // Translated captions: sentences already translated are reused by the
   // next clip that has them too. If it fails, the clips get the spoken
@@ -276,7 +282,7 @@ async function renderSuggestions(opts: {
         end,
         title: suggestion.title,
         aspect: options.aspect,
-        captionPreset: options.captionPreset === 'mine' ? undefined : options.captionPreset,
+        captionPreset: options.captionPreset === 'mine' || isTemplateChoice(options.captionPreset) ? undefined : options.captionPreset,
         zoom: options.zoom,
         // A track that has been deleted since the job started is left out.
         music: options.music && musicTrack(options.music) ? { track: options.music, volume: DEFAULT_MUSIC_VOLUME } : null,

@@ -2,7 +2,7 @@
 
 import { captionFont, cssFontFamily } from '@/lib/edit/fonts';
 import { CAPTION_PRESETS, captionPreset } from '@/lib/edit/presets';
-import type { AspectRatio, BrandStyle, CaptionPresetId, CaptionSettings } from '@/lib/edit/types';
+import type { AspectRatio, BrandStyle, CaptionPresetId, CaptionSettings, StyleTemplate } from '@/lib/edit/types';
 
 /** A small outline in the shape of a format. */
 export function AspectIcon({ aspect }: { aspect: AspectRatio }) {
@@ -56,11 +56,13 @@ export function StyleSample(props: { style: Pick<CaptionSettings, 'preset' | 'fo
  * colours. With `mine`, "Min stil" (your saved style) comes first.
  */
 export function CaptionPresetPicker(props: {
-  value: CaptionPresetId | 'mine';
+  value: string;
   onChange: (id: CaptionPresetId) => void;
   fontsReady: boolean;
   columns?: string;
   mine?: { style: BrandStyle; onSelect: () => void } | null;
+  /** Your templates, after Min stil. */
+  templates?: { template: StyleTemplate; onSelect: () => void }[];
 }) {
   const card = (selected: boolean) =>
     `rounded-lg border p-2 text-left ${selected ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600 bg-base-900'}`;
@@ -73,6 +75,13 @@ export function CaptionPresetPicker(props: {
           <span className="block text-[11px] text-gray-400 leading-tight">Din sparade stil, med logga om du har en</span>
         </button>
       )}
+      {(props.templates ?? []).map(({ template, onSelect }) => (
+        <button key={template.id} type="button" onClick={onSelect} aria-pressed={props.value === template.id} className={card(props.value === template.id)}>
+          <StyleSample style={template.captions} fontsReady={props.fontsReady} />
+          <span className="block text-xs font-medium mt-1 truncate">{template.name}</span>
+          <span className="block text-[11px] text-gray-400 leading-tight">Din mall</span>
+        </button>
+      ))}
       {CAPTION_PRESETS.map((p) => (
         <button
           key={p.id}

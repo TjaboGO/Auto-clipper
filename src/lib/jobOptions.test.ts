@@ -45,3 +45,9 @@ test('Min stil can be picked as the caption style', () => {
   assert.equal(sanitizeJobOptions({ captionPreset: 'mine' }).captionPreset, 'mine');
   assert.equal(sanitizeJobOptions({ captionPreset: 'theirs' }).captionPreset, 'karaoke');
 });
+
+test('a template can be picked as the style', () => {
+  assert.equal(sanitizeJobOptions({ captionPreset: 't-0123456789ab' }).captionPreset, 't-0123456789ab');
+  assert.equal(sanitizeJobOptions({ captionPreset: 't-../../x' }).captionPreset, defaultJobOptions().captionPreset);
+  assert.equal(sanitizeJobOptions({ captionPreset: 'mine' }).captionPreset, 'mine');
+});

@@ -17,6 +17,7 @@ import {
   CLIP_LENGTHS,
   clipLength,
   defaultJobOptions,
+  isTemplateChoice,
   MAX_TOPIC_LENGTH,
   MIN_RANGE_SECONDS,
   parseTime,
@@ -77,8 +78,9 @@ const PRESET_FONTS = [...new Set(CAPTION_PRESETS.map((p) => p.style.font))].map(
 export function UploadForm() {
   const router = useRouter();
   const [brand, setBrand] = useState<BrandInfo | null>(null);
-  const mineFont = brand?.style ? captionFont(brand.style.captions.font) : null;
-  const fontsReady = useCaptionFonts(mineFont ? [...PRESET_FONTS, mineFont] : PRESET_FONTS);
+  // The fonts of Min stil and your templates too, for their samples.
+  const savedFonts = [brand?.style, ...(brand?.templates ?? [])].flatMap((look) => (look ? [captionFont(look.captions.font)] : []));
+  const fontsReady = useCaptionFonts([...PRESET_FONTS, ...savedFonts]);
   const [mode, setMode] = useState<Mode>('upload');
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState('');
@@ -107,8 +109,13 @@ export function UploadForm() {
       .then((b) => {
         setCustomFonts(b.fonts);
         setBrand(b);
-        // Min stil was picked last time but has been removed since.
-        if (!b.style) setOptions((o) => (o.captionPreset === 'mine' ? { ...o, captionPreset: 'karaoke' } : o));
+        // Min stil or a template was picked last time but has been removed since.
+        setOptions((o) =>
+          (o.captionPreset === 'mine' && !b.style) ||
+          (isTemplateChoice(o.captionPreset) && !(b.templates ?? []).some((t) => t.id === o.captionPreset))
+            ? { ...o, captionPreset: 'karaoke' }
+            : o,
+        );
       })
       .catch(() => undefined);
   }, []);
@@ -188,7 +195,11 @@ export function UploadForm() {
   const summary = [
     `${clipLength(options.clipLength).label === 'Auto' ? 'Auto längd' : clipLength(options.clipLength).hint}`,
     options.aspect,
-    options.captionPreset === 'mine' ? 'Min stil' : captionPreset(options.captionPreset).label,
+    options.captionPreset === 'mine'
+      ? 'Min stil'
+      : isTemplateChoice(options.captionPreset)
+        ? (brand?.templates?.find((t) => t.id === options.captionPreset)?.name ?? 'Mall')
+        : captionPreset(options.captionPreset).label,
     options.keywords ? 'nyckelord' : null,
     options.emojis ? 'emojis' : null,
     options.zoom !== 'off' ? 'zoom' : null,
@@ -313,6 +324,10 @@ export function UploadForm() {
                 fontsReady={fontsReady}
                 columns="grid-cols-2 sm:grid-cols-3"
                 mine={brand?.style ? { style: brand.style, onSelect: () => set({ captionPreset: 'mine' }) } : null}
+                templates={(brand?.templates ?? []).map((template) => ({
+                  template,
+                  onSelect: () => set({ captionPreset: template.id as `t-${string}` }),
+                }))}
               />
             </Field>
             <Field label="AI:n tittar på videon">

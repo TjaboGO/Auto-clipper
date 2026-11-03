@@ -48,6 +48,9 @@ och appen:
     och hashtags ifyllda (och #Shorts för stående klipp)
 18. Visar vad poängen bygger på (krok, flyt, värde och trend), låter dig sortera klippen, och har
     en kalender med allt du schemalagt och publicerat
+19. Sparar flera mallar med egna namn (text, rubrik, logga, zoom och förloppsstapel), som du väljer
+    när du skapar klipp eller använder på ett klipp i redigeraren. Klippen kan få en förloppsstapel
+    som fylls på medan de spelas
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -244,7 +247,9 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   `PUT .../edit` sparar en redigering, `POST .../render` renderar om klippet.
 - Varumärke: `GET /api/brand`, `POST /api/brand/fonts?filename=...` (filen som body),
   `DELETE /api/brand/fonts/<id>`, `POST`/`DELETE /api/brand/logo` (bilden som body, `GET` visar
-  den), `PUT`/`DELETE /api/brand/style` (Min stil).
+  den), `PUT`/`DELETE /api/brand/style` (Min stil), `POST /api/brand/templates` med
+  `{ "name", "style" }` (samma namn ersätter mallen), `PUT`/`DELETE /api/brand/templates/<id>`.
+  En mall väljs vid uppladdning med `"captionPreset": "t-..."`.
 - Projekt för Premiere och DaVinci: `POST /api/jobs/<id>/clips/<clipId>/project` börjar bygga,
   `GET .../project?status` visar hur det går och `GET .../project` laddar ner ZIP-filen.
 - YouTube-cookies: `GET` (bara status, aldrig innehållet), `PUT` (cookies.txt som body) och

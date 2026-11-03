@@ -147,3 +147,23 @@ export const disconnectYoutube = () =>
   call<{ account: YoutubeSettings['account'] }>('/api/youtube/account', { method: 'DELETE' }, 'Kunde inte koppla från kontot.').then(
     (b) => b.account,
   );
+
+/** Save a look as a template (the same name replaces that template). */
+export const saveTemplate = (name: string, style: Omit<BrandStyle, 'savedAt'>) =>
+  call<{ brand: BrandInfo }>(
+    '/api/brand/templates',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, style }) },
+    'Kunde inte spara mallen.',
+  ).then((b) => b.brand);
+
+export const renameTemplate = (id: string, name: string) =>
+  call<{ brand: BrandInfo }>(
+    `/api/brand/templates/${encodeURIComponent(id)}`,
+    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) },
+    'Kunde inte byta namn på mallen.',
+  ).then((b) => b.brand);
+
+export const deleteTemplate = (id: string) =>
+  call<{ brand: BrandInfo }>(`/api/brand/templates/${encodeURIComponent(id)}`, { method: 'DELETE' }, 'Kunde inte ta bort mallen.').then(
+    (b) => b.brand,
+  );

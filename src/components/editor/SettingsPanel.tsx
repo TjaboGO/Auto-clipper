@@ -6,6 +6,7 @@ import {
   fetchPexels,
   logoUrl,
   saveStyle,
+  saveTemplate,
   searchBroll,
   uploadFont,
   uploadLogo,
@@ -30,6 +31,7 @@ import { ZOOM_LEVELS } from '@/lib/edit/zoom';
 import type {
   AspectRatio,
   BrandInfo,
+  BrandStyle,
   BrollItem,
   BrollVideo,
   CaptionSettings,
@@ -236,12 +238,28 @@ export function SettingsPanel(props: SettingsPanelProps) {
       return 'Loggan är uppladdad. Den gäller alla klipp där du slår på den.';
     });
 
-  const saveAsMine = () =>
+  // Saved looks: Min stil and your templates.
+  const looks = [
+    ...(brand.style ? [{ id: 'mine', name: 'Min stil', style: brand.style }] : []),
+    ...(brand.templates ?? []).map((t) => ({ id: t.id, name: t.name, style: t as BrandStyle })),
+  ];
+  const [lookId, setLookId] = useState<string>('mine');
+  const look = looks.find((l) => l.id === lookId) ?? looks[0];
+  const [lookName, setLookName] = useState<string | null>(null);
+  const saveLook = (rawName: string) =>
     run('style', async () => {
-      onBrand(
-        await saveStyle(styleOf(edit)),
-      );
-      return 'Sparad som Min stil. Välj Min stil när du skapar klipp, så får de den här looken.';
+      const name = rawName.trim() || 'Min stil';
+      if (name.toLowerCase() === 'min stil') {
+        onBrand(await saveStyle(styleOf(edit)));
+        setLookId('mine');
+        setLookName(null);
+        return 'Sparad som Min stil. Välj den när du skapar klipp, så får de den här looken.';
+      }
+      const next = await saveTemplate(name, styleOf(edit));
+      onBrand(next);
+      setLookId(next.templates?.find((t) => t.name.toLowerCase() === name.toLowerCase())?.id ?? 'mine');
+      setLookName(null);
+      return `Sparad som mallen ${name}. Välj den när du skapar klipp, eller använd den på andra klipp här.`;
     });
 
   const [pexels, setPexels] = useState<PexelsStatus | null>(null);
@@ -296,10 +314,10 @@ export function SettingsPanel(props: SettingsPanelProps) {
     set({ ...edit, translation: { ...translation, segments: { ...translation.segments, [String(id)]: text } } }, `translation-${id}`);
   };
 
-  const applyMine = () => {
-    if (!brand.style) return;
-    set(withStyle(edit, brand.style, !!brand.logo));
-    setMessage({ text: 'Min stil är använd på klippet.' });
+  const applyLook = () => {
+    if (!look) return;
+    set(withStyle(edit, look.style, !!brand.logo));
+    setMessage({ text: `${look.name} är använd på klippet.` });
   };
 
   const layouts: { id: LayoutMode; label: string; hint: string; disabled?: boolean }[] = [
@@ -340,26 +358,66 @@ export function SettingsPanel(props: SettingsPanelProps) {
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center gap-1.5 mb-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-gray-400 mr-auto whitespace-nowrap">Min stil</span>
-        {brand.style && (
+        <span className="text-xs font-semibold uppercase tracking-wide text-gray-400 mr-auto whitespace-nowrap">Stil</span>
+        {looks.length > 0 && lookName === null && (
+          <>
+            <select
+              value={look?.id}
+              onChange={(e) => setLookId(e.target.value)}
+              aria-label="Sparad stil"
+              className="min-w-0 max-w-[9rem] rounded-md bg-base-800 px-2 py-1 text-xs"
+            >
+              {looks.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={applyLook}
+              className="rounded-md px-2.5 py-1 text-xs font-medium bg-base-800 hover:bg-base-700"
+              title="Ge klippet den sparade stilen: text, rubrik, logga, zoom och förloppsstapel"
+            >
+              Använd
+            </button>
+          </>
+        )}
+        {lookName === null ? (
           <button
             type="button"
-            onClick={applyMine}
-            className="rounded-md px-2.5 py-1 text-xs font-medium bg-base-800 hover:bg-base-700"
-            title="Ge klippet den sparade stilen: text, rubrik och logga"
+            onClick={() => setLookName(look && look.id !== 'mine' ? look.name : 'Min stil')}
+            disabled={busy === 'style'}
+            className="rounded-md px-2.5 py-1 text-xs font-medium bg-base-800 hover:bg-base-700 disabled:opacity-50"
+            title="Spara klippets stil som Min stil eller som en mall med eget namn"
           >
-            Använd
+            Spara ...
           </button>
+        ) : (
+          <form
+            className="flex items-center gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveLook(lookName);
+            }}
+          >
+            <input
+              value={lookName}
+              onChange={(e) => setLookName(e.target.value)}
+              maxLength={40}
+              autoFocus
+              aria-label="Namn på stilen"
+              placeholder="Min stil"
+              className="w-28 rounded-md bg-base-800 px-2 py-1 text-xs"
+            />
+            <button type="submit" disabled={busy === 'style'} className="rounded-md px-2.5 py-1 text-xs font-semibold bg-accent-500 hover:bg-accent-400 disabled:opacity-50">
+              {busy === 'style' ? 'Sparar ...' : 'Spara'}
+            </button>
+            <button type="button" onClick={() => setLookName(null)} className="rounded-md px-1.5 py-1 text-xs text-gray-400 hover:text-white" aria-label="Avbryt">
+              ✕
+            </button>
+          </form>
         )}
-        <button
-          type="button"
-          onClick={saveAsMine}
-          disabled={busy === 'style'}
-          className="rounded-md px-2.5 py-1 text-xs font-medium bg-base-800 hover:bg-base-700 disabled:opacity-50"
-          title="Spara klippets text, rubrik och logga som Min stil, för nya klipp"
-        >
-          {busy === 'style' ? 'Sparar ...' : 'Spara'}
-        </button>
       </div>
       {message && (
         <p

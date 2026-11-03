@@ -36,8 +36,13 @@ export function clipLength(id: string): ClipLength {
   return CLIP_LENGTHS.find((l) => l.id === id) ?? CLIP_LENGTHS[0];
 }
 
-/** A caption style, or "mine": the style you saved in the editor (Min stil). */
-export type CaptionStyleChoice = CaptionPresetId | 'mine';
+/** A caption style, "mine": the style you saved in the editor (Min stil), or one of your templates ("t-..."). */
+export type CaptionStyleChoice = CaptionPresetId | 'mine' | `t-${string}`;
+
+/** Is this one of your templates? */
+export function isTemplateChoice(choice: string): choice is `t-${string}` {
+  return /^t-[0-9a-f]{8,32}$/.test(choice);
+}
 
 export interface JobOptions {
   clipLength: ClipLengthId;
@@ -113,11 +118,10 @@ export function sanitizeJobOptions(raw: unknown): JobOptions {
   return {
     clipLength: pick(raw.clipLength, CLIP_LENGTHS.map((l) => l.id), defaults.clipLength),
     aspect: pick(raw.aspect, ASPECT_RATIOS, defaults.aspect),
-    captionPreset: pick<CaptionStyleChoice>(
-      raw.captionPreset,
-      [...CAPTION_PRESETS.map((p) => p.id), 'mine'],
-      defaults.captionPreset,
-    ),
+    captionPreset:
+      typeof raw.captionPreset === 'string' && isTemplateChoice(raw.captionPreset)
+        ? raw.captionPreset
+        : pick<CaptionStyleChoice>(raw.captionPreset, [...CAPTION_PRESETS.map((p) => p.id), 'mine'], defaults.captionPreset),
     keywords: typeof raw.keywords === 'boolean' ? raw.keywords : defaults.keywords,
     topic: sanitizeTopic(raw.topic),
     range,

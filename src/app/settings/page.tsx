@@ -12,6 +12,7 @@ import {
   fetchCookies,
   deleteMusic,
   deletePexelsKey,
+  deleteTemplate,
   deleteYoutubeApp,
   disconnectYoutube,
   fetchPexels,
@@ -21,6 +22,7 @@ import {
   saveCookies,
   savePexelsKey,
   saveYoutubeApp,
+  renameTemplate,
   uploadFont,
   uploadLogo,
   uploadMusic,
@@ -82,7 +84,11 @@ export default function SettingsPage() {
   const [cookieText, setCookieText] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean; section: string } | null>(null);
-  const fontsReady = useCaptionFonts(brand ? [...brand.fonts, captionFont(brand.style?.captions.font ?? 'montserrat')] : []);
+  const fontsReady = useCaptionFonts(
+    brand
+      ? [...brand.fonts, captionFont(brand.style?.captions.font ?? 'montserrat'), ...(brand.templates ?? []).map((t) => captionFont(t.captions.font))]
+      : [],
+  );
 
   const showBrand = (next: BrandInfo) => {
     setCustomFonts(next.fonts);
@@ -186,10 +192,57 @@ export default function SettingsPage() {
             ) : (
               <p className="text-sm text-gray-300">
                 Ingen sparad stil än. Öppna ett klipp i redigeraren, gör det som du vill ha det och tryck på{' '}
-                <span className="font-medium">Spara</span> vid Min stil.
+                <span className="font-medium">Spara ...</span> vid Stil.
               </p>
             )}
             {note('stil')}
+          </Card>
+
+          <Card
+            id="mallar"
+            title="Mallar"
+            intro="Fler sparade stilar, med egna namn, till exempel en per kanal eller serie. Spara en i redigeraren med Spara ... och ett namn."
+          >
+            {(brand.templates ?? []).length === 0 ? (
+              <p className="text-sm text-gray-400">Inga mallar än.</p>
+            ) : (
+              <ul className="space-y-2">
+                {(brand.templates ?? []).map((t) => (
+                  <li key={t.id} className="flex flex-wrap items-center gap-3 rounded-lg bg-base-800/60 px-3 py-2">
+                    <div className="rounded-md bg-base-800 px-3 py-2 min-w-32">
+                      <StyleSample style={t.captions} fontsReady={fontsReady} />
+                    </div>
+                    <div className="text-sm mr-auto min-w-0">
+                      <p className="font-medium truncate">{t.name}</p>
+                      <p className="text-xs text-gray-400">
+                        {captionPreset(t.captions.preset).label}, {captionFont(t.captions.font).label}
+                        {t.progress?.enabled ? ' · förloppsstapel' : ''}
+                        {t.zoom && t.zoom !== 'off' ? ' · zoom' : ''}
+                        {t.logo.enabled ? ' · logga' : ''}
+                      </p>
+                    </div>
+                    <SmallButton disabled={busy === 'mallar'} onClick={() => {
+                      const name = window.prompt('Nytt namn på mallen', t.name);
+                      if (name && name.trim() && name.trim() !== t.name) {
+                        run('mallar', async () => {
+                          showBrand(await renameTemplate(t.id, name));
+                          return null;
+                        });
+                      }
+                    }}>
+                      Byt namn
+                    </SmallButton>
+                    <SmallButton danger disabled={busy === 'mallar'} onClick={() => run('mallar', async () => {
+                      showBrand(await deleteTemplate(t.id));
+                      return `${t.name} är borttagen.`;
+                    })}>
+                      Ta bort
+                    </SmallButton>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {note('mallar')}
           </Card>
 
           <Card

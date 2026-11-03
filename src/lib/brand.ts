@@ -9,7 +9,7 @@ import { captionMetrics, readFontFile } from './fontFile';
 import { probeDimensions, probeDuration, probeHasAudio } from './probe';
 import { setCustomFonts, type CustomFont } from './edit/fonts';
 import { sanitizeStyle } from './edit/presets';
-import type { BrandInfo, BrandStyle, LogoImage, MusicTrack } from './edit/types';
+import type { BrandInfo, BrandStyle, LogoImage, MusicTrack, StyleTemplate } from './edit/types';
 
 export const MAX_FONTS = 30;
 export const MAX_FONT_BYTES = 20 * 1024 * 1024;
@@ -57,11 +57,18 @@ function load(): BrandInfo {
           fs.existsSync(path.join(/* turbopackIgnore: true */ musicDir(), path.basename(m.file))),
       )
     : [];
+  const templates = Array.isArray(raw.templates)
+    ? raw.templates.flatMap((t) => {
+        const style = t && typeof t.id === 'string' && /^t-[0-9a-f]{8,32}$/.test(t.id) && typeof t.name === 'string' ? sanitizeStyle(t) : null;
+        return style ? [{ ...style, id: t.id, name: t.name.slice(0, TEMPLATE_NAME_MAX), savedAt: t.savedAt ?? style.savedAt }] : [];
+      })
+    : [];
   cache = {
     fonts,
     logo: raw.logo && fs.existsSync(logoFile()) ? raw.logo : null,
     style: raw.style ?? null,
     music,
+    templates,
   };
   setCustomFonts(cache.fonts);
   return cache;
@@ -128,12 +135,15 @@ export function removeFont(id: string): boolean {
   const font = brand.fonts.find((f) => f.id === id);
   if (!font) return false;
   fs.rmSync(path.join(/* turbopackIgnore: true */ fontsDir(), path.basename(font.file)), { force: true });
-  // Min stil with this font gets the default one instead.
-  const style =
-    brand.style?.captions.font === id
-      ? { ...brand.style, captions: { ...brand.style.captions, font: 'montserrat' as const } }
-      : brand.style;
-  save({ ...brand, fonts: brand.fonts.filter((f) => f.id !== id), style });
+  // Min stil and templates with this font get the default one instead.
+  const withoutFont = <T extends BrandStyle>(look: T): T =>
+    look.captions.font === id ? { ...look, captions: { ...look.captions, font: 'montserrat' as const } } : look;
+  save({
+    ...brand,
+    fonts: brand.fonts.filter((f) => f.id !== id),
+    style: brand.style ? withoutFont(brand.style) : brand.style,
+    templates: (brand.templates ?? []).map(withoutFont),
+  });
   return true;
 }
 
@@ -272,4 +282,54 @@ export function saveStyle(raw: unknown): BrandStyle {
 
 export function clearStyle(): void {
   save({ ...load(), style: null });
+}
+
+// ---------------------------------------------------------------------------
+// Templates (Mallar): named looks, as many as you like (well, 30)
+// ---------------------------------------------------------------------------
+
+export const TEMPLATE_NAME_MAX = 40;
+const MAX_TEMPLATES = 30;
+
+/**
+ * Save a look as a template. With the name of one you already have, that
+ * one is replaced (so "Spara" with the same name updates it).
+ */
+export function saveTemplate(rawName: unknown, rawStyle: unknown): StyleTemplate {
+  const name = typeof rawName === 'string' ? rawName.replace(/\s+/g, ' ').trim().slice(0, TEMPLATE_NAME_MAX) : '';
+  if (!name) throw new Error('Mallen behöver ett namn.');
+  const style = sanitizeStyle(rawStyle);
+  if (!style) throw new Error('Mallen saknar textinställningar.');
+  const brand = load();
+  const templates = brand.templates ?? [];
+  const same = templates.find((t) => t.name.toLowerCase() === name.toLowerCase());
+  if (!same && templates.length >= MAX_TEMPLATES) throw new Error(`Du kan ha högst ${MAX_TEMPLATES} mallar. Ta bort någon först.`);
+  const template: StyleTemplate = { ...style, id: same?.id ?? `t-${crypto.randomBytes(6).toString('hex')}`, name };
+  save({ ...brand, templates: same ? templates.map((t) => (t.id === same.id ? template : t)) : [...templates, template] });
+  return template;
+}
+
+export function renameTemplate(id: string, rawName: unknown): StyleTemplate {
+  const name = typeof rawName === 'string' ? rawName.replace(/\s+/g, ' ').trim().slice(0, TEMPLATE_NAME_MAX) : '';
+  if (!name) throw new Error('Mallen behöver ett namn.');
+  const brand = load();
+  const templates = brand.templates ?? [];
+  const template = templates.find((t) => t.id === id);
+  if (!template) throw new Error('Mallen finns inte.');
+  if (templates.some((t) => t.id !== id && t.name.toLowerCase() === name.toLowerCase())) throw new Error('Du har redan en mall med det namnet.');
+  const renamed = { ...template, name };
+  save({ ...brand, templates: templates.map((t) => (t.id === id ? renamed : t)) });
+  return renamed;
+}
+
+export function removeTemplate(id: string): boolean {
+  const brand = load();
+  const templates = brand.templates ?? [];
+  if (!templates.some((t) => t.id === id)) return false;
+  save({ ...brand, templates: templates.filter((t) => t.id !== id) });
+  return true;
+}
+
+export function brandTemplate(id: string): StyleTemplate | null {
+  return (load().templates ?? []).find((t) => t.id === id) ?? null;
 }
