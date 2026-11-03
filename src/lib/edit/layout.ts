@@ -325,6 +325,12 @@ export function fitRect(source: SourceInfo, out: OutputSize): { x: number; y: nu
 const LOGO_MARGIN = 0.04;
 const LOGO_MAX_HEIGHT = 0.25;
 
+/** The progress bar in the finished frame: full width, a thin strip at the top or bottom. */
+export function progressRect(out: OutputSize, position: 'top' | 'bottom'): { x: number; y: number; w: number; h: number } {
+  const h = Math.max(6, Math.round((out.h * 0.006) / 2) * 2);
+  return { x: 0, y: position === 'top' ? 0 : out.h - h, w: out.w, h };
+}
+
 /** Where the logo goes in the finished frame, in output pixels. */
 export function logoRect(
   out: OutputSize,

@@ -86,6 +86,13 @@ export interface LogoSettings {
   opacity: number;
 }
 
+/** A thin bar along the top or bottom that fills up as the clip plays. */
+export interface ProgressBarSettings {
+  enabled: boolean;
+  color: string; // #rrggbb
+  position: 'top' | 'bottom';
+}
+
 /** Changes to one word of the transcript. */
 export interface WordOverride {
   /** Corrected spelling shown in the captions. */
@@ -139,6 +146,8 @@ export interface ClipEdit {
   music: ClipMusic | null;
   /** Stock video over parts of the clip. */
   broll: BrollItem[];
+  /** A bar that shows how far into the clip you are. */
+  progress: ProgressBarSettings;
 }
 
 /** Translated captions: each transcript sentence (by its index) in another language. */
@@ -153,7 +162,17 @@ export interface BrandStyle {
   captions: CaptionSettings;
   title: Pick<TitleSettings, 'enabled' | 'duration'>;
   logo: LogoSettings;
+  /** Missing in styles saved before these existed: the clip keeps its own. */
+  zoom?: ZoomLevel;
+  progress?: ProgressBarSettings;
   savedAt: string;
+}
+
+/** A named look you saved (Mallar): like Min stil, and you can have several. */
+export interface StyleTemplate extends BrandStyle {
+  /** "t-" + random hex. */
+  id: string;
+  name: string;
 }
 
 /** The logo image in the brand kit. `version` changes when it's replaced. */
@@ -219,6 +238,8 @@ export interface BrandInfo {
   style: BrandStyle | null;
   /** Missing in brand kits from before music. */
   music?: MusicTrack[];
+  /** Your saved templates (missing in older brand kits). */
+  templates?: StyleTemplate[];
 }
 
 /** One transcript word as the editor sees it. */

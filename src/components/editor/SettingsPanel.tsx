@@ -24,7 +24,7 @@ import {
   splitAllowed,
   type ResolvedLayout,
 } from '@/lib/edit/layout';
-import { BROLL_DURATION, captionPreset, DEFAULT_MUSIC_VOLUME, LOGO_CORNERS, presetCaptions, withStyle } from '@/lib/edit/presets';
+import { BROLL_DURATION, captionPreset, DEFAULT_MUSIC_VOLUME, LOGO_CORNERS, presetCaptions, styleOf, withStyle } from '@/lib/edit/presets';
 import { CAPTION_LANGUAGES, captionLanguage } from '@/lib/edit/translation';
 import { ZOOM_LEVELS } from '@/lib/edit/zoom';
 import type {
@@ -239,11 +239,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const saveAsMine = () =>
     run('style', async () => {
       onBrand(
-        await saveStyle({
-          captions: edit.captions,
-          title: { enabled: edit.title.enabled, duration: edit.title.duration },
-          logo: edit.logo,
-        }),
+        await saveStyle(styleOf(edit)),
       );
       return 'Sparad som Min stil. Välj Min stil när du skapar klipp, så får de den här looken.';
     });
@@ -629,6 +625,34 @@ export function SettingsPanel(props: SettingsPanelProps) {
                   ? 'Bilden går närmare varannan mening och på markerade ord, som när man klipper mellan två kameravinklar.'
                   : 'Zoomen fungerar bara med layouten Följ talaren.'}
               </p>
+            </Section>
+            <Section title="Förloppsstapel">
+              <Toggle
+                label="Visa hur långt klippet har kommit"
+                checked={edit.progress.enabled}
+                onChange={(v) => set({ ...edit, progress: { ...edit.progress, enabled: v } })}
+              />
+              {edit.progress.enabled && (
+                <div className="flex items-center gap-3">
+                  <ColorField
+                    label="Färg"
+                    value={edit.progress.color}
+                    onChange={(v, key) => set({ ...edit, progress: { ...edit.progress, color: v } }, key)}
+                  />
+                  <div className="grid grid-cols-2 gap-1.5 ml-auto">
+                    {(['top', 'bottom'] as const).map((pos) => (
+                      <button
+                        key={pos}
+                        type="button"
+                        onClick={() => set({ ...edit, progress: { ...edit.progress, position: pos } })}
+                        className={`rounded-md border px-2 py-1 text-xs ${edit.progress.position === pos ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
+                      >
+                        {pos === 'top' ? 'Uppe' : 'Nere'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </Section>
             {stackLayout && facecam && (
               <Section title={props.resolved.layout === 'facecam' ? 'Kameran' : 'Skärmen'}>

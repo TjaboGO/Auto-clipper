@@ -124,6 +124,7 @@ function plainEdit(edit: ClipEdit, start: number, end: number): ClipEdit {
     zoom: 'off',
     music: null,
     broll: [],
+    progress: { ...edit.progress, enabled: false },
   };
 }
 
@@ -134,7 +135,7 @@ const README = (p: { graphics: boolean; broll: number; music: boolean; subtitles
     'Filerna',
     '  projekt.xml        tidslinjen (Final Cut Pro 7 XML, som båda programmen läser)',
     `  video.mp4          videon inramad i klippets format, utan text och utan klipp, med ${PROJECT_HANDLE} s extra i början och slutet`,
-    ...(p.graphics ? ['  grafik.mov         texter, rubrik, logga och emojis på ett genomskinligt lager (ProRes 4444)'] : []),
+    ...(p.graphics ? ['  grafik.mov         texter, rubrik, logga, emojis och förloppsstapel på ett genomskinligt lager (ProRes 4444)'] : []),
     ...(p.broll ? [`  broll-1.mp4 ...    B-roll, redan beskuren till klippets format (${p.broll} st)`] : []),
     ...(p.music ? ['  musik.wav          bakgrundsmusiken i vald volym (sänks inte automatiskt när någon pratar)'] : []),
     ...(p.subtitles ? ['  text.srt           undertexterna, om du vill ha dem som ett textspår'] : []),
@@ -220,7 +221,7 @@ async function buildProject(jobId: string, clipId: string): Promise<void> {
     if (graphics.visible) {
       step('Renderar texterna ...');
       const graphPath = path.join(/* turbopackIgnore: true */ workDir, 'grafik.filtergraph');
-      fs.writeFileSync(graphPath, buildGraphicsGraph(graphics), 'utf-8');
+      fs.writeFileSync(graphPath, buildGraphicsGraph({ ...graphics, out }, duration), 'utf-8');
       await run(
         'ffmpeg',
         [

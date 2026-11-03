@@ -12,7 +12,7 @@ import { translatedWords } from './edit/translation';
 import { zoomFactor, zoomSegments } from './edit/zoom';
 import { brollShows } from './edit/broll';
 import { brollPath, downloadVideo } from './pexels';
-import { defaultCaptionPosition, framePanels, logoRect, OUTPUT_SIZES, resolveLayout, type Panel, type ResolvedLayout } from './edit/layout';
+import { defaultCaptionPosition, framePanels, logoRect, OUTPUT_SIZES, progressRect, resolveLayout, type Panel, type ResolvedLayout } from './edit/layout';
 import {
   applyReframe,
   keptRanges,
@@ -43,7 +43,9 @@ export interface ClipGraphics {
   captionsFilter: string;
   /** The spoken words on the finished clip's timeline. */
   spoken: OutputWord[];
-  /** Whether anything shows at all (captions, a title, the logo or an emoji). */
+  /** The progress bar, if it's on. */
+  progress?: RenderGraphInput['progress'];
+  /** Whether anything shows at all (captions, a title, the logo, an emoji or the progress bar). */
   visible: boolean;
 }
 
@@ -105,6 +107,7 @@ export function clipGraphics(opts: {
     fs.copyFileSync(customFile, path.join(/* turbopackIgnore: true */ fontsDir, path.basename(customFile)));
   }
   const title = edit.title.enabled && edit.title.text.trim() !== '';
+  const progress = edit.progress?.enabled ? { color: edit.progress.color, rect: progressRect(out, edit.progress.position) } : undefined;
   return {
     inputs,
     inputCount: nextInput - 1,
@@ -112,7 +115,8 @@ export function clipGraphics(opts: {
     emojis,
     captionsFilter: `ass=filename='${escapeFfmpegFilterPath(assPath)}':fontsdir='${escapeFfmpegFilterPath(fontsDir)}'`,
     spoken,
-    visible: (edit.captions.enabled && words.length > 0) || title || !!logo || emojis.length > 0,
+    progress,
+    visible: (edit.captions.enabled && words.length > 0) || title || !!logo || emojis.length > 0 || !!progress,
   };
 }
 
@@ -193,6 +197,7 @@ export async function renderClipEdit(opts: {
     emojis,
     broll,
     music,
+    progress: graphics.progress,
     zoom: layout === 'single' && edit.zoom !== 'off' ? { factor: zoomFactor(edit.zoom), segments: zoomSegments(spoken, duration) } : undefined,
   });
   // A clip with many cuts has a long graph: pass it as a file, not an argument.

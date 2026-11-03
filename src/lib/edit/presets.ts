@@ -16,6 +16,7 @@ import type {
   LayoutMode,
   LogoCorner,
   LogoSettings,
+  ProgressBarSettings,
   ReframeKey,
   TimeRange,
   WordOverride,
@@ -112,6 +113,7 @@ export const ASPECT_RATIOS: AspectRatio[] = ['9:16', '1:1', '4:5', '16:9'];
 export const LOGO_CORNERS: LogoCorner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 export const DEFAULT_LOGO: LogoSettings = { enabled: false, corner: 'top-right', size: 0.16, opacity: 1 };
 export const LAYOUT_MODES: LayoutMode[] = ['auto', 'fill', 'fit', 'split', 'facecam', 'screen', 'group'];
+export const DEFAULT_PROGRESS: ProgressBarSettings = { enabled: false, color: '#FFD400', position: 'bottom' };
 
 /** How the pipeline renders a fresh clip: no cuts, auto framing, the job's format and caption style. */
 export function defaultEdit(opts: {
@@ -143,6 +145,7 @@ export function defaultEdit(opts: {
     zoom: opts.zoom ?? 'off',
     music: opts.music ?? null,
     broll: [],
+    progress: { ...DEFAULT_PROGRESS },
   };
 }
 
@@ -193,6 +196,15 @@ function sanitizeCaptions(raw: unknown, fallback: CaptionSettings): CaptionSetti
   };
 }
 
+export function sanitizeProgress(raw: unknown, fallback: ProgressBarSettings): ProgressBarSettings {
+  if (!isObject(raw)) return fallback;
+  return {
+    enabled: bool(raw.enabled, fallback.enabled),
+    color: color(raw.color, fallback.color),
+    position: oneOf(raw.position, ['top', 'bottom'] as const, fallback.position),
+  };
+}
+
 export function sanitizeLogo(raw: unknown, fallback: LogoSettings): LogoSettings {
   if (!isObject(raw)) return fallback;
   return {
@@ -214,6 +226,7 @@ export function upgradeEdit(edit: ClipEdit): ClipEdit {
     zoom: oneOf(edit.zoom, ZOOM_LEVELS.map((l) => l.id), 'off'),
     music: sanitizeMusic(edit.music, null),
     broll: sanitizeBroll(edit.broll, []),
+    progress: sanitizeProgress(edit.progress, DEFAULT_PROGRESS),
   };
 }
 
@@ -295,13 +308,30 @@ function panelSize(value: unknown, fallback: number | null): number | null {
     : fallback;
 }
 
-/** The clip with "Min stil" on it: text, title and logo (a logo only if there is one). */
+/**
+ * The clip with a saved look on it (Min stil or a template): text, title
+ * and logo (a logo only if there is one), and zoom and progress bar when
+ * the look has them.
+ */
 export function withStyle(edit: ClipEdit, style: BrandStyle, hasLogo: boolean): ClipEdit {
   return {
     ...edit,
     captions: { ...style.captions },
     title: { ...edit.title, enabled: style.title.enabled, duration: style.title.duration },
     logo: { ...style.logo, enabled: style.logo.enabled && hasLogo },
+    ...(style.zoom ? { zoom: style.zoom } : {}),
+    ...(style.progress ? { progress: { ...style.progress } } : {}),
+  };
+}
+
+/** The look of a clip, to save as Min stil or a template. */
+export function styleOf(edit: ClipEdit): Omit<BrandStyle, 'savedAt'> {
+  return {
+    captions: edit.captions,
+    title: { enabled: edit.title.enabled, duration: edit.title.duration },
+    logo: edit.logo,
+    zoom: edit.zoom,
+    progress: edit.progress,
   };
 }
 
@@ -317,6 +347,8 @@ export function sanitizeStyle(raw: unknown): BrandStyle | null {
       duration: oneOf(rawTitle.duration, ['intro', 'all'] as const, 'intro'),
     },
     logo: sanitizeLogo(raw.logo, DEFAULT_LOGO),
+    ...(raw.zoom !== undefined ? { zoom: oneOf(raw.zoom, ZOOM_LEVELS.map((l) => l.id), 'off') } : {}),
+    ...(isObject(raw.progress) ? { progress: sanitizeProgress(raw.progress, DEFAULT_PROGRESS) } : {}),
     savedAt: new Date().toISOString(),
   };
 }
@@ -396,5 +428,6 @@ export function sanitizeEdit(
     zoom: oneOf(raw.zoom, ZOOM_LEVELS.map((l) => l.id), fallback.zoom ?? 'off'),
     music: sanitizeMusic(raw.music, fallback.music ?? null),
     broll: sanitizeBroll(raw.broll, fallback.broll ?? [], wordIds),
+    progress: sanitizeProgress(raw.progress, fallback.progress ?? DEFAULT_PROGRESS),
   };
 }

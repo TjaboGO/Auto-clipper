@@ -81,6 +81,8 @@ export interface RenderGraphInput {
   music?: { input: number; volume: number };
   /** Stock video over parts of the clip: each a video input, filling the frame from `start` to `end`. */
   broll?: { input: number; start: number; end: number }[];
+  /** A bar that fills up over the clip, at `rect`, under the captions. */
+  progress?: { color: string; rect: { y: number; h: number } };
 }
 
 /** The video part of the graph up to the finished frame: crop, parts stacked together, or fit. */
@@ -159,7 +161,9 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
       `,split=2[wide][close];[close]scale=${zw}:${zh},crop=${w}:${h}:${x}:${y}[closer];` +
       `[wide][closer]overlay=0:0:enable='${when}'`;
   }
-  let graph = `${video},${input.captionsFilter}[vout]`;
+  // The progress bar goes over everything but the captions.
+  const finish = (label: string) => topLayers(label, input, outputLength(input), '');
+  let graph = input.progress ? `${video}[vbase]${finish('vbase')}` : `${video},${input.captionsFilter}[vout]`;
   if (input.emojis?.length || input.broll?.length) {
     // Layers one after the other - B-roll, logo, emojis - then the captions on top.
     graph = `${video}[v0]`;
@@ -173,10 +177,12 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
       current = `vb${i}`;
     });
     const layers = logoAndEmojis(current, input, '');
-    graph += layers.graph + `;[${layers.label}]${input.captionsFilter}[vout]`;
+    graph += layers.graph + finish(layers.label);
   } else if (input.logo) {
     const { rect, opacity } = input.logo;
-    graph = `${video}[base];${logoFilter(rect, opacity)};[base][logo]overlay=${rect.x}:${rect.y},${input.captionsFilter}[vout]`;
+    graph = input.progress
+      ? `${video}[base];${logoFilter(rect, opacity)};[base][logo]overlay=${rect.x}:${rect.y}[vl]${finish('vl')}`
+      : `${video}[base];${logoFilter(rect, opacity)};[base][logo]overlay=${rect.x}:${rect.y},${input.captionsFilter}[vout]`;
   }
   const maps = ['-map', '[vout]'];
   const speech = speechAudio(input, whole);
@@ -241,13 +247,42 @@ function logoAndEmojis(
 }
 
 /**
- * The clip's graphics on their own, for the project export: captions,
- * title, logo and emojis over a see-through frame (input 0, a transparent
- * color source), so an editing program can lay them over the video.
+ * The progress bar (if any) over [label], then the captions: the graph
+ * part from [label] to [vout], starting with ";".
  */
-export function buildGraphicsGraph(input: Pick<RenderGraphInput, 'logo' | 'emojis' | 'captionsFilter'>): string {
+function topLayers(
+  label: string,
+  input: Pick<RenderGraphInput, 'progress' | 'captionsFilter' | 'out'>,
+  length: number,
+  overlayOptions: string,
+  captionsOptions = '',
+): string {
+  let graph = '';
+  let current = label;
+  if (input.progress) {
+    const { color, rect } = input.progress;
+    const d = Math.max(0.1, length);
+    graph +=
+      `;color=c=0x${color.replace('#', '')}:s=${input.out.w}x${rect.h}:r=30:d=${num(d + 1)}[pbar]` +
+      `;[${current}][pbar]overlay=x='-w+W*min(1,t/${num(d)})':y=${rect.y}:eof_action=repeat${overlayOptions}[vp]`;
+    current = 'vp';
+  }
+  return `${graph};[${current}]${input.captionsFilter}${captionsOptions}[vout]`;
+}
+
+/**
+ * The clip's graphics on their own, for the project export: captions,
+ * title, logo, emojis and the progress bar over a see-through frame
+ * (input 0, a transparent color source), so an editing program can lay
+ * them over the video.
+ */
+export function buildGraphicsGraph(
+  input: Pick<RenderGraphInput, 'logo' | 'emojis' | 'captionsFilter' | 'progress' | 'out'>,
+  length: number,
+): string {
   const layers = logoAndEmojis('0:v', input, ':format=auto');
-  return `${layers.graph.replace(/^;/, '')}${layers.graph ? ';' : ''}[${layers.label}]${input.captionsFilter}:alpha=1,format=yuva444p10le[vout]`;
+  const graph = layers.graph + topLayers(layers.label, input, length, ':format=auto', ':alpha=1,format=yuva444p10le');
+  return graph.replace(/^;/, '');
 }
 
 /** Length of the finished clip (the kept parts together). */

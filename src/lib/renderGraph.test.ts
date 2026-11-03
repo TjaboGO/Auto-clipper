@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildRenderGraph, keyframesToCropXExpr, type RenderGraphInput } from './renderGraph';
-import { framePanels } from './edit/layout';
+import { buildGraphicsGraph, buildRenderGraph, keyframesToCropXExpr, type RenderGraphInput } from './renderGraph';
+import { framePanels, progressRect } from './edit/layout';
 
 const source = { width: 1920, height: 1080, duration: 600, hasAudio: true };
 const captionsFilter = "ass=filename='clip.ass'";
@@ -169,4 +169,31 @@ test('background music is faded, ducked under the speech and mixed in', () => {
   // A clip without sound gets just the music.
   const silent = buildRenderGraph(input({ hasAudio: false, music: { input: 1, volume: 0.3 } }));
   assert.deepEqual(silent.maps, ['-map', '[vout]', '-map', '[music]']);
+});
+
+test('a progress bar fills up over the finished clip, under the captions', () => {
+  const progress = { color: '#FFD400', rect: progressRect({ w: 1080, h: 1920 }, 'bottom') };
+  assert.deepEqual(progress.rect, { x: 0, y: 1908, w: 1080, h: 12 });
+  // Two kept parts: 4 s of finished clip.
+  const { graph } = buildRenderGraph(input({ progress, kept: [{ start: 0, end: 1 }, { start: 2, end: 5 }] }));
+  assert.match(graph, /\[vbase\];color=c=0xFFD400:s=1080x12:r=30:d=5\[pbar\];\[vbase\]\[pbar\]overlay=x='-w\+W\*min\(1,t\/4\)':y=1908:eof_action=repeat\[vp\];\[vp\]ass=filename='clip\.ass'\[vout\]/);
+  // With a logo too, and at the top.
+  const top = { color: '#FFFFFF', rect: progressRect({ w: 1080, h: 1920 }, 'top') };
+  const withLogo = buildRenderGraph(input({ progress: top, logo: { rect: { x: 850, y: 43, w: 187, h: 94 }, opacity: 1 } })).graph;
+  assert.match(withLogo, /\[base\]\[logo\]overlay=850:43\[vl\];color=c=0xFFFFFF:s=1080x12:r=30:d=6\[pbar\];\[vl\]\[pbar\]overlay=x='-w\+W\*min\(1,t\/5\)':y=0/);
+  // Without it nothing changes.
+  assert.doesNotMatch(buildRenderGraph(input({})).graph, /pbar/);
+});
+
+test('the graphics layer for the project export keeps everything see-through', () => {
+  const graph = buildGraphicsGraph(
+    { out: { w: 1080, h: 1920 }, captionsFilter, progress: { color: '#FF0000', rect: { y: 1908, h: 12 } }, emojis: [] },
+    10,
+  );
+  assert.equal(
+    graph,
+    "color=c=0xFF0000:s=1080x12:r=30:d=11[pbar];[0:v][pbar]overlay=x='-w+W*min(1,t/10)':y=1908:eof_action=repeat:format=auto[vp];" +
+      "[vp]ass=filename='clip.ass':alpha=1,format=yuva444p10le[vout]",
+  );
+  assert.equal(buildGraphicsGraph({ out: { w: 1080, h: 1920 }, captionsFilter }, 10), "[0:v]ass=filename='clip.ass':alpha=1,format=yuva444p10le[vout]");
 });

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import type { CaptionMetrics, CaptionPage, TitleMetrics } from '@/lib/edit/captionLayout';
 import { cxAt, playableTime, toOutputTime, toSourceTime } from '@/lib/edit/timeline';
-import { logoRect } from '@/lib/edit/layout';
+import { logoRect, progressRect } from '@/lib/edit/layout';
 import type { ClipEdit, LogoImage, TimeRange } from '@/lib/edit/types';
 import { drawCaptions, drawCropView, drawEmoji, drawFrame, drawLogo, drawTitle, type FrameSpec } from './draw';
 import { emojiFile, emojiPop, type EmojiShow } from '@/lib/edit/emoji';
@@ -128,6 +128,12 @@ export function Preview(props: PreviewProps) {
       }
       if (p.edit.logo.enabled && p.logo && logoImage.current) {
         drawLogo(ctx, logoImage.current, logoRect(p.spec.out, p.logo, p.edit.logo), p.edit.logo.opacity, k);
+      }
+      if (p.edit.progress?.enabled && p.duration > 0) {
+        // The same bar as the render: full width, filling up over the finished clip.
+        const bar = progressRect(p.spec.out, p.edit.progress.position);
+        ctx.fillStyle = p.edit.progress.color;
+        ctx.fillRect(0, bar.y * k, canvas.width * Math.min(1, o / p.duration), bar.h * k);
       }
       for (const show of p.emojis) {
         const image = emojiImages.current.get(emojiFile(show.emoji));
