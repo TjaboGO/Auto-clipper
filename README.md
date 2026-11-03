@@ -44,6 +44,8 @@ och appen:
     söker själv), och bakgrundsmusik från dina egna låtar som sänks automatiskt när någon pratar
 16. Exporterar ett klipp som projekt till Premiere Pro och DaVinci Resolve: en ZIP med tidslinjen
     (XML), videon redan inramad, texterna som ett eget genomskinligt lager, B-roll och musik
+17. Publicerar klipp direkt på din YouTube-kanal, eller schemalägger dem, med titel, beskrivning
+    och hashtags ifyllda (och #Shorts för stående klipp)
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -208,6 +210,10 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   filen), visar procent under nedladdningen och sparar videons titel. Vanliga fel (logga in,
   åldersgräns, privat, borttagen, livesändning, för många förfrågningar) blir begripliga
   meddelanden som säger vad du kan göra.
+- `src/lib/youtubePublish.ts` - publicering på YouTube. Du kopplar ditt konto en gång via din
+  egen Google-app (OAuth), och appen sparar en nyckel som förnyar inloggningen (i en fil som bara
+  servern kan läsa). Uppladdningen använder YouTubes återupptagbara uppladdning, så ett avbrott
+  fortsätter där det slutade. En uppladdning i taget, i en egen kö, med förlopp på klippet.
 - `src/lib/nle.ts` och `src/lib/nleExport.ts` - exporten till Premiere och DaVinci. Tidslinjen
   skrivs som Final Cut Pro 7 XML, som båda programmen läser. Alla filer görs i klippets storlek
   och bildfrekvens (videon inramad med 2 s extra i varje ände, grafiken som ProRes 4444 med
@@ -241,6 +247,11 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   `GET .../project?status` visar hur det går och `GET .../project` laddar ner ZIP-filen.
 - YouTube-cookies: `GET` (bara status, aldrig innehållet), `PUT` (cookies.txt som body) och
   `DELETE /api/youtube-cookies`.
+- Publicera på YouTube: `GET /api/youtube` (status och adressen att lägga in hos Google),
+  `PUT`/`DELETE /api/youtube/app` (klient-id och hemlighet), `GET /api/youtube/connect` (skickar
+  dig till Google), `DELETE /api/youtube/account` (koppla från). Per klipp:
+  `GET /api/jobs/<id>/clips/<clipId>/youtube` (förslag på titel och text) och `POST` med
+  `{ "title", "description", "tags", "privacy": "public|unlisted|private", "publishAt" }`.
 
 ## Kända begränsningar (värt att veta)
 
@@ -265,8 +276,12 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
 - **Rörelseföljningen är enkel.** Den följer där det rör sig mest, så i en bild med rörelse
   överallt (publik, konfetti, snabba kameraåkningar) kan den välja fel. Då kan du beskära själv i
   redigeraren.
+- **YouTube-publicering kräver en egen Google-app.** Det är gratis men tar tio minuter att ställa
+  in (stegen står på inställningssidan). En ny app får ladda upp ungefär sex videor per dag, och
+  tills Google har granskat appen blir videorna låsta som privata. Då publicerar du dem själv i
+  YouTube Studio. Publiceringen är testad mot en lokal testserver, inte mot riktiga YouTube.
 - **Redigeraren har inte allt som Opus har.** Det finns inga övergångar eller publicering direkt
-  till TikTok och YouTube. B-roll kommer bara från Pexels och kräver en egen (gratis) nyckel, och
+  till TikTok. B-roll kommer bara från Pexels och kräver en egen (gratis) nyckel, och
   det finns ingen inbyggd musik: du laddar upp egna låtar. I förhandsvisningen hörs musiken utan
   sänkningen under tal. Emojierna är ett urval på drygt 100 vanliga, och
   zoomen hoppar in och ut (ingen mjuk åkning). Delarna i split screen, facecam,
@@ -307,7 +322,10 @@ istället. Bara texten skickas dit, ljud och video går fortfarande till Gemini,
 `GEMINI_API_KEY` behövs ändå. `WORD_TIMING` och `WHISPER_MODEL` styr ordtimingen, och
 `SOURCE_RETENTION_DAYS` hur länge källvideon sparas för redigeraren. `APP_PASSWORD` sätter ett
 lösenord för hela appen (tomt = öppen). `PEXELS_API_KEY` är nyckeln för B-roll (annars kan den
-sparas på inställningssidan). `YTDLP_COOKIES` kan peka på en
+sparas på inställningssidan). `GOOGLE_CLIENT_ID` och `GOOGLE_CLIENT_SECRET` är din Google-app för
+YouTube-publicering (annars sparas den på inställningssidan), och `PUBLIC_URL` appens adress
+utifrån, om den inte går att läsa från anropen (till exempel bakom en proxy som inte skickar
+`X-Forwarded-Host`). `YTDLP_COOKIES` kan peka på en
 egen cookies.txt för YouTube (annars sparas cookies från inställningssidan i
 `storage/youtube-cookies.txt`).
 
@@ -336,4 +354,4 @@ ordtiming, `yt-dlp` för YouTube-nedladdning.
 8. ~~Lösenord för appen, översatta texter, SRT-export och alla klipp som ZIP~~ (klar)
 9. ~~Emojis i texterna, fler textanimationer och automatisk zoom~~ (klar)
 10. ~~B-roll (till exempel från Pexels med din egen nyckel) och bakgrundsmusik~~ (klar)
-11. Publicera direkt till YouTube, och export till Premiere och DaVinci Resolve
+11. ~~Publicera direkt till YouTube, och export till Premiere och DaVinci Resolve~~ (klar)

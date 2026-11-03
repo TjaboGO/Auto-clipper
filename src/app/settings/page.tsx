@@ -12,16 +12,21 @@ import {
   fetchCookies,
   deleteMusic,
   deletePexelsKey,
+  deleteYoutubeApp,
+  disconnectYoutube,
   fetchPexels,
+  fetchYoutube,
   logoUrl,
   musicUrl,
   saveCookies,
   savePexelsKey,
+  saveYoutubeApp,
   uploadFont,
   uploadLogo,
   uploadMusic,
   type CookieStatus,
   type PexelsStatus,
+  type YoutubeSettings,
 } from '@/components/brandApi';
 import { StyleSample } from '@/components/CaptionStyleParts';
 import { FileButton } from '@/components/FileButton';
@@ -72,6 +77,8 @@ export default function SettingsPage() {
   const [cookies, setCookies] = useState<CookieStatus | null>(null);
   const [pexels, setPexels] = useState<PexelsStatus | null>(null);
   const [pexelsKey, setPexelsKey] = useState('');
+  const [youtube, setYoutube] = useState<YoutubeSettings | null>(null);
+  const [googleApp, setGoogleApp] = useState({ clientId: '', clientSecret: '' });
   const [cookieText, setCookieText] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean; section: string } | null>(null);
@@ -92,6 +99,16 @@ export default function SettingsPage() {
     fetchPexels()
       .then(setPexels)
       .catch(() => undefined);
+    fetchYoutube()
+      .then(setYoutube)
+      .catch(() => undefined);
+    // Back from connecting a YouTube account.
+    const params = new URLSearchParams(window.location.search);
+    const failed = params.get('youtube_error');
+    if (failed || params.get('youtube') === 'connected') {
+      setMessage(failed ? { text: failed, error: true, section: 'publicera' } : { text: 'YouTube-kontot är kopplat.', section: 'publicera' });
+      window.history.replaceState(null, '', `${window.location.pathname}#publicera`);
+    }
   }, []);
 
   async function run(section: string, job: () => Promise<string | null>) {
@@ -129,7 +146,7 @@ export default function SettingsPage() {
           <LogoutButton />
         </div>
         <h1 className="text-2xl font-bold mt-4">Inställningar</h1>
-        <p className="text-sm text-gray-400 mt-1">Ditt varumärke för klippen, och cookies för YouTube.</p>
+        <p className="text-sm text-gray-400 mt-1">Ditt varumärke för klippen, B-roll, och YouTube.</p>
       </div>
       {note('top')}
 
@@ -350,8 +367,111 @@ export default function SettingsPage() {
       </Card>
 
       <Card
+        id="publicera"
+        title="Publicera på YouTube"
+        intro="Ladda upp klipp direkt till din kanal, eller schemalägg dem. Det kräver en egen Google-app (gratis), som du gör en gång."
+      >
+        {youtube?.app.configured ? (
+          <>
+            {youtube.account.connected ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-sm text-accent-300 mr-auto">
+                  Kopplad till {youtube.account.channel?.title ?? 'din kanal'}
+                  {youtube.account.connectedAt ? <span className="text-gray-500"> · {date(youtube.account.connectedAt)}</span> : null}
+                </p>
+                <SmallButton danger disabled={busy === 'publicera'} onClick={() => run('publicera', async () => {
+                  const account = await disconnectYoutube();
+                  setYoutube((y) => (y ? { ...y, account } : y));
+                  return 'Kontot är frånkopplat.';
+                })}>
+                  Koppla från
+                </SmallButton>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-sm text-gray-400 mr-auto">Inget konto kopplat än.</p>
+                <a href="/api/youtube/connect" className="rounded-lg bg-accent-500 hover:bg-accent-400 px-4 py-2 text-sm font-semibold">
+                  Koppla YouTube-konto
+                </a>
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+              <span className="mr-auto break-all">Google-app: {youtube.app.clientId}</span>
+              {!youtube.app.fromEnv && (
+                <SmallButton danger disabled={busy === 'publicera'} onClick={() => run('publicera', async () => {
+                  const app = await deleteYoutubeApp();
+                  setYoutube((y) => (y ? { ...y, app, account: { connected: false } } : y));
+                  return 'Google-appen är borttagen.';
+                })}>
+                  Byt app
+                </SmallButton>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <ol className="text-sm text-gray-300 list-decimal pl-5 space-y-1">
+              <li>Gå till console.cloud.google.com och skapa ett projekt.</li>
+              <li>Slå på &quot;YouTube Data API v3&quot; under APIs &amp; Services.</li>
+              <li>Ställ in OAuth consent screen: External, och lägg till din egen e-post som testanvändare.</li>
+              <li>
+                Skapa Credentials, OAuth client ID, typ Web application, och lägg till den här adressen under
+                Authorized redirect URIs:
+              </li>
+            </ol>
+            {youtube && (
+              <p className="font-mono text-xs bg-base-800 rounded-md px-3 py-2 break-all select-all">{youtube.redirectUri}</p>
+            )}
+            <p className="text-sm text-gray-300">5. Klistra in klient-id och klienthemlighet här.</p>
+            <form
+              className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
+              onSubmit={(e) => {
+                e.preventDefault();
+                run('publicera', async () => {
+                  const app = await saveYoutubeApp(googleApp.clientId, googleApp.clientSecret);
+                  setYoutube((y) => (y ? { ...y, app, account: { connected: false } } : y));
+                  setGoogleApp({ clientId: '', clientSecret: '' });
+                  return 'Google-appen är sparad. Koppla nu ditt YouTube-konto.';
+                });
+              }}
+            >
+              <input
+                value={googleApp.clientId}
+                onChange={(e) => setGoogleApp((g) => ({ ...g, clientId: e.target.value }))}
+                placeholder="Klient-id"
+                aria-label="Klient-id"
+                autoComplete="off"
+                className="min-w-0 rounded-lg bg-base-800 px-3 py-2 text-sm"
+              />
+              <input
+                type="password"
+                value={googleApp.clientSecret}
+                onChange={(e) => setGoogleApp((g) => ({ ...g, clientSecret: e.target.value }))}
+                placeholder="Klienthemlighet"
+                aria-label="Klienthemlighet"
+                autoComplete="off"
+                className="min-w-0 rounded-lg bg-base-800 px-3 py-2 text-sm"
+              />
+              <button
+                type="submit"
+                disabled={busy === 'publicera' || !googleApp.clientId.trim() || !googleApp.clientSecret.trim()}
+                className="rounded-lg bg-accent-500 hover:bg-accent-400 disabled:opacity-50 px-4 py-2 text-sm font-semibold"
+              >
+                Spara
+              </button>
+            </form>
+          </>
+        )}
+        <p className="text-xs text-gray-500">
+          En ny Google-app får ladda upp ungefär sex videor per dag. Tills Google har granskat appen blir uppladdade
+          videor låsta som privata, så då kan du publicera dem själv i YouTube Studio.
+        </p>
+        {note('publicera')}
+      </Card>
+
+      <Card
         id="youtube"
-        title="YouTube"
+        title="Hämta från YouTube"
         intro="YouTube stoppar ofta nedladdningar från servrar, och alltid för videor med åldersgräns. Med cookies från ett inloggat konto går det oftast ändå."
       >
         {cookies && (

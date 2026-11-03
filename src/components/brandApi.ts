@@ -123,3 +123,27 @@ export const downloadBroll = (video: BrollVideo) =>
   ).then((b) => b.video);
 
 export const brollUrl = (file: string) => `/api/broll/${encodeURIComponent(file)}`;
+
+export interface YoutubeSettings {
+  app: { configured: boolean; fromEnv: boolean; clientId?: string };
+  account: { connected: boolean; channel?: { id: string; title: string; thumb?: string }; connectedAt?: string };
+  /** The address to add in the Google app. */
+  redirectUri: string;
+}
+
+export const fetchYoutube = () => call<YoutubeSettings>('/api/youtube', { cache: 'no-store' }, 'Kunde inte läsa YouTube-inställningen.');
+
+export const saveYoutubeApp = (clientId: string, clientSecret: string) =>
+  call<{ app: YoutubeSettings['app'] }>(
+    '/api/youtube/app',
+    { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId, clientSecret }) },
+    'Kunde inte spara Google-appen.',
+  ).then((b) => b.app);
+
+export const deleteYoutubeApp = () =>
+  call<{ app: YoutubeSettings['app'] }>('/api/youtube/app', { method: 'DELETE' }, 'Kunde inte ta bort Google-appen.').then((b) => b.app);
+
+export const disconnectYoutube = () =>
+  call<{ account: YoutubeSettings['account'] }>('/api/youtube/account', { method: 'DELETE' }, 'Kunde inte koppla från kontot.').then(
+    (b) => b.account,
+  );

@@ -9,6 +9,7 @@ import { SearchMore } from '@/components/SearchMore';
 import { captionPreset } from '@/lib/edit/presets';
 import { clipLength, formatClock, type JobOptions } from '@/lib/jobOptions';
 import { captionLanguage } from '@/lib/edit/translation';
+import type { YoutubeUpload } from '@/lib/types';
 
 interface Clip {
   id: string;
@@ -21,6 +22,7 @@ interface Clip {
   version?: number;
   editable?: boolean;
   renderState?: { status: 'queued' | 'rendering' | 'error'; error?: string };
+  youtube?: YoutubeUpload;
 }
 
 interface JobData {
@@ -60,8 +62,14 @@ function optionLabels(options?: JobOptions, watched?: boolean): string[] {
   ].filter(Boolean);
 }
 
+/** A clip is being rendered again or uploaded to YouTube: keep the page up to date. */
 const rendering = (job: JobData) =>
-  job.clips?.some((c) => c.renderState && c.renderState.status !== 'error') ?? false;
+  job.clips?.some(
+    (c) =>
+      (c.renderState && c.renderState.status !== 'error') ||
+      c.youtube?.status === 'queued' ||
+      c.youtube?.status === 'uploading',
+  ) ?? false;
 
 export default function JobPage() {
   const { id } = useParams<{ id: string }>();
@@ -197,7 +205,7 @@ export default function JobPage() {
       {clips.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-8">
           {clips.map((clip) => (
-            <ClipCard key={clip.id} jobId={job.id} clip={clip} />
+            <ClipCard key={clip.id} jobId={job.id} clip={clip} onChange={() => setPollKey((k) => k + 1)} />
           ))}
         </div>
       )}

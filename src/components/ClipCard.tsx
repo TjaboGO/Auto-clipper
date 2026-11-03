@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { ProjectExport } from './ProjectExport';
+import { YoutubePublish } from './YoutubePublish';
+import type { YoutubeUpload } from '@/lib/types';
 
 interface Clip {
   id: string;
@@ -16,9 +18,10 @@ interface Clip {
   version?: number;
   editable?: boolean;
   renderState?: { status: 'queued' | 'rendering' | 'error'; error?: string };
+  youtube?: YoutubeUpload;
 }
 
-export function ClipCard({ jobId, clip }: { jobId: string; clip: Clip }) {
+export function ClipCard({ jobId, clip, onChange }: { jobId: string; clip: Clip; onChange?: () => void }) {
   const [copied, setCopied] = useState(false);
   const videoSrc = `/api/clips/${jobId}/${clip.filename}`;
   const thumbSrc = `/api/clips/${jobId}/${clip.filename.replace(/\.mp4$/, '.jpg')}`;
@@ -93,6 +96,11 @@ export function ClipCard({ jobId, clip }: { jobId: string; clip: Clip }) {
           >
             {copied ? 'Kopierat!' : 'Kopiera text'}
           </button>
+          {!busy && (
+            <div className="col-span-2">
+              <YoutubePublish jobId={jobId} clipId={clip.id} upload={clip.youtube} onStarted={onChange} />
+            </div>
+          )}
           {clip.editable && !busy && (
             <ProjectExport jobId={jobId} clipId={clip.id} version={clip.version} className="col-span-2" />
           )}
