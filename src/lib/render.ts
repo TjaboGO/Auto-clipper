@@ -4,7 +4,7 @@ import { config } from './config';
 import { run } from './exec';
 import { brandInfo, customFontPath, logoFile, musicTrack } from './brand';
 import { buildClipAss, escapeFfmpegFilterPath } from './captions';
-import { buildRenderGraph } from './renderGraph';
+import { buildRenderGraph, type RenderGraphInput } from './renderGraph';
 import { captionFont, isCustomFontId } from './edit/fonts';
 import { captionMetrics, captionPages } from './edit/captionLayout';
 import { clipEmojiShows, emojiFile, emojiRect } from './edit/emoji';
@@ -12,15 +12,16 @@ import { translatedWords } from './edit/translation';
 import { zoomFactor, zoomSegments } from './edit/zoom';
 import { brollShows } from './edit/broll';
 import { brollPath, downloadVideo } from './pexels';
-import { defaultCaptionPosition, framePanels, logoRect, OUTPUT_SIZES, resolveLayout, type ResolvedLayout } from './edit/layout';
+import { defaultCaptionPosition, framePanels, logoRect, OUTPUT_SIZES, resolveLayout, type Panel, type ResolvedLayout } from './edit/layout';
 import {
   applyReframe,
   keptRanges,
   keyframesForRange,
   outputDuration,
   outputWords,
+  type OutputWord,
 } from './edit/timeline';
-import type { ClipEdit, ClipEditorData } from './edit/types';
+import type { ClipEdit, ClipEditorData, TimeRange } from './edit/types';
 
 export interface RenderResult {
   layout: ResolvedLayout;
@@ -28,6 +29,91 @@ export interface RenderResult {
   duration: number;
   /** Why the layout isn't what was asked for, if it isn't. */
   note?: string;
+}
+
+/** What goes over the framed picture: captions, title, logo and emojis. */
+export interface ClipGraphics {
+  /** ffmpeg input arguments, in order from input 1: the logo, then the emojis. */
+  inputs: string[];
+  /** How many inputs that is. */
+  inputCount: number;
+  logo?: RenderGraphInput['logo'];
+  emojis: NonNullable<RenderGraphInput['emojis']>;
+  /** The ass=... filter for the captions and title. */
+  captionsFilter: string;
+  /** The spoken words on the finished clip's timeline. */
+  spoken: OutputWord[];
+  /** Whether anything shows at all (captions, a title, the logo or an emoji). */
+  visible: boolean;
+}
+
+/**
+ * Captions, title, logo and emojis for a clip, the same way for the render
+ * and for the project export: writes the .ass file (and a font folder for
+ * one of your fonts) to `workDir`. `loopFor`: how long each emoji picture
+ * input lasts.
+ */
+export function clipGraphics(opts: {
+  data: ClipEditorData;
+  edit: ClipEdit;
+  kept: TimeRange[];
+  layout: ResolvedLayout;
+  panels: Panel[] | null;
+  workDir: string;
+  name: string;
+  loopFor: number;
+}): ClipGraphics {
+  const { data, edit, kept, layout, panels, workDir, name } = opts;
+  // Loads the brand kit, which also makes your own fonts known to the caption code.
+  const brand = brandInfo();
+  const out = OUTPUT_SIZES[edit.aspect];
+  const duration = outputDuration(kept);
+
+  // The captions show the spoken words, or their translation.
+  const spoken = outputWords(edit, data.words, kept);
+  const words = translatedWords(spoken, edit.translation ?? null);
+  const captionY = defaultCaptionPosition(layout, edit.aspect, panels);
+
+  fs.mkdirSync(workDir, { recursive: true });
+  const assPath = path.join(workDir, `${name}.ass`);
+  fs.writeFileSync(
+    assPath,
+    buildClipAss({ words, clipLength: duration, captions: edit.captions, title: edit.title, out, captionY, aspect: edit.aspect }),
+    'utf-8',
+  );
+
+  const logo = edit.logo.enabled && brand.logo ? { rect: logoRect(out, brand.logo, edit.logo), opacity: edit.logo.opacity } : undefined;
+  const inputs = logo ? ['-i', logoFile()] : [];
+  // Emojis over the captions: one looped picture input each, after the logo.
+  const metrics = captionMetrics(edit.captions, out, captionY, edit.aspect);
+  const pages = captionPages(words, duration, { maxWords: metrics.maxWords, maxChars: metrics.maxChars, uppercase: edit.captions.uppercase });
+  let nextInput = logo ? 2 : 1;
+  const emojis = clipEmojiShows(edit, spoken, pages, duration).flatMap((show) => {
+    const file = path.join(config.emojiDir, emojiFile(show.emoji));
+    if (!fs.existsSync(file)) return [];
+    inputs.push('-loop', '1', '-t', String(Math.max(0.2, opts.loopFor)), '-i', file);
+    return [{ input: nextInput++, rect: emojiRect(metrics), start: show.start, end: show.end }];
+  });
+
+  // One of your fonts: libass gets a folder with just that font, so no
+  // font that comes with the app can have the same name.
+  let fontsDir = config.fontsDir;
+  const customFile = isCustomFontId(edit.captions.font) ? customFontPath(captionFont(edit.captions.font).file) : null;
+  if (customFile) {
+    fontsDir = path.join(/* turbopackIgnore: true */ workDir, `${name}-fonts`);
+    fs.mkdirSync(fontsDir, { recursive: true });
+    fs.copyFileSync(customFile, path.join(/* turbopackIgnore: true */ fontsDir, path.basename(customFile)));
+  }
+  const title = edit.title.enabled && edit.title.text.trim() !== '';
+  return {
+    inputs,
+    inputCount: nextInput - 1,
+    logo,
+    emojis,
+    captionsFilter: `ass=filename='${escapeFfmpegFilterPath(assPath)}':fontsdir='${escapeFfmpegFilterPath(fontsDir)}'`,
+    spoken,
+    visible: (edit.captions.enabled && words.length > 0) || title || !!logo || emojis.length > 0,
+  };
 }
 
 /**
@@ -46,10 +132,13 @@ export async function renderClipEdit(opts: {
   workDir: string;
   /** Base name for the scratch files (.ass, filtergraph). */
   name: string;
+  /**
+   * For the project export: a constant frame rate (ffmpeg -r value), a
+   * better quality and two sound channels.
+   */
+  master?: { rate: string };
 }): Promise<RenderResult> {
   const { sourcePath, data, edit, outPath, workDir, name } = opts;
-  // Loads the brand kit, which also makes your own fonts known to the caption code.
-  const brand = brandInfo();
   const out = OUTPUT_SIZES[edit.aspect];
   const { layout, note } = resolveLayout(edit.layout, edit.aspect, data.source, data.analysis);
   const kept = keptRanges(edit, data.words);
@@ -65,30 +154,9 @@ export async function renderClipEdit(opts: {
     panelSize: edit.panelSize,
   });
 
-  // The captions show the spoken words, or their translation.
-  const spoken = outputWords(edit, data.words, kept);
-  const words = translatedWords(spoken, edit.translation ?? null);
-  const captionY = defaultCaptionPosition(layout, edit.aspect, panels);
-
-  fs.mkdirSync(workDir, { recursive: true });
-  const assPath = path.join(workDir, `${name}.ass`);
-  fs.writeFileSync(
-    assPath,
-    buildClipAss({ words, clipLength: duration, captions: edit.captions, title: edit.title, out, captionY, aspect: edit.aspect }),
-    'utf-8',
-  );
-
-  // Emojis over the captions: one looped picture input each, after the logo.
-  const metrics = captionMetrics(edit.captions, out, captionY, edit.aspect);
-  const pages = captionPages(words, duration, { maxWords: metrics.maxWords, maxChars: metrics.maxChars, uppercase: edit.captions.uppercase });
-  const emojiInputs: string[] = [];
-  let nextInput = edit.logo.enabled && brand.logo ? 2 : 1;
-  const emojis = clipEmojiShows(edit, spoken, pages, duration).flatMap((show) => {
-    const file = path.join(config.emojiDir, emojiFile(show.emoji));
-    if (!fs.existsSync(file)) return [];
-    emojiInputs.push('-loop', '1', '-t', String(Math.max(0.2, length)), '-i', file);
-    return [{ input: nextInput++, rect: emojiRect(metrics), start: show.start, end: show.end }];
-  });
+  const graphics = clipGraphics({ data, edit, kept, layout, panels, workDir, name, loopFor: length });
+  const { spoken, logo, emojis } = graphics;
+  let nextInput = 1 + graphics.inputCount;
   // Stock video: each one looped (if it's short) and cut to its time on screen.
   const brollInputs: string[] = [];
   const shows = brollShows(edit, spoken, duration);
@@ -111,17 +179,6 @@ export async function renderClipEdit(opts: {
   // The parts of a split screen, facecam, screen or group layout, on the clip's timeline.
   const parts = panels?.map((p) => ({ ...p, keyframes: keyframesForRange(p.keyframes, edit.start, edit.end) }));
 
-  // One of your fonts: libass gets a folder with just that font, so no
-  // font that comes with the app can have the same name.
-  let fontsDir = config.fontsDir;
-  const customFile = isCustomFontId(edit.captions.font) ? customFontPath(captionFont(edit.captions.font).file) : null;
-  if (customFile) {
-    fontsDir = path.join(/* turbopackIgnore: true */ workDir, `${name}-fonts`);
-    fs.mkdirSync(fontsDir, { recursive: true });
-    fs.copyFileSync(customFile, path.join(/* turbopackIgnore: true */ fontsDir, path.basename(customFile)));
-  }
-  const logo = edit.logo.enabled && brand.logo ? { rect: logoRect(out, brand.logo, edit.logo), opacity: edit.logo.opacity } : undefined;
-
   const { graph, maps } = buildRenderGraph({
     source: data.source,
     out,
@@ -131,9 +188,7 @@ export async function renderClipEdit(opts: {
     kept: kept.map((r) => ({ start: r.start - edit.start, end: r.end - edit.start })),
     length,
     hasAudio: data.source.hasAudio,
-    captionsFilter:
-      `ass=filename='${escapeFfmpegFilterPath(assPath)}'` +
-      `:fontsdir='${escapeFfmpegFilterPath(fontsDir)}'`,
+    captionsFilter: graphics.captionsFilter,
     logo,
     emojis,
     broll,
@@ -152,18 +207,19 @@ export async function renderClipEdit(opts: {
       '-ss', String(edit.start),
       '-t', String(Math.max(0.2, length)),
       '-i', sourcePath,
-      ...(logo ? ['-i', logoFile()] : []),
-      ...emojiInputs,
+      ...graphics.inputs,
       ...brollInputs,
       ...musicInputs,
       '-filter_complex_script', graphPath,
       ...maps,
+      ...(opts.master ? ['-r', opts.master.rate] : []),
       '-c:v', 'libx264',
-      '-preset', 'veryfast',
-      '-crf', '21',
+      '-preset', opts.master ? 'fast' : 'veryfast',
+      '-crf', opts.master ? '17' : '21',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
-      '-b:a', '128k',
+      '-b:a', opts.master ? '192k' : '128k',
+      ...(opts.master ? ['-ac', '2', '-ar', '48000'] : []),
       '-movflags', '+faststart',
       outPath,
     ],

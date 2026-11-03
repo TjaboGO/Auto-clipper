@@ -62,3 +62,21 @@ export async function probeDimensions(filePath: string): Promise<VideoDimensions
     ? { width: stream.height, height: stream.width }
     : { width: stream.width, height: stream.height };
 }
+
+/** Frames per second of a video's first video stream (its average rate; 30 if ffprobe can't tell). */
+export async function probeFrameRate(filePath: string): Promise<number> {
+  const { stdout } = await run('ffprobe', [
+    '-v', 'error',
+    '-select_streams', 'v:0',
+    '-show_entries', 'stream=avg_frame_rate,r_frame_rate',
+    '-of', 'json',
+    filePath,
+  ]);
+  const stream = JSON.parse(stdout).streams?.[0] ?? {};
+  for (const value of [stream.avg_frame_rate, stream.r_frame_rate]) {
+    const [num, den] = String(value ?? '').split('/').map(Number);
+    const fps = den ? num / den : num;
+    if (Number.isFinite(fps) && fps > 1 && fps < 1000) return fps;
+  }
+  return 30;
+}

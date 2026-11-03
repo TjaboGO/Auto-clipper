@@ -31,6 +31,7 @@ import { formatTime } from './format';
 import { previewFormat } from './previewFormat';
 import { Preview, type PreviewHandle } from './Preview';
 import { SettingsPanel } from './SettingsPanel';
+import { ProjectExport } from '../ProjectExport';
 import { Timeline } from './Timeline';
 import { Transcript, type Selection } from './Transcript';
 import type { EditorPayload, PreviewInfo } from './types';
@@ -511,6 +512,9 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
           >
             Ladda ner nya versionen
           </a>
+        )}
+        {!rendering && (
+          <ProjectExport jobId={jobId} clipId={clip.id} version={clip.version} className="hidden lg:flex w-60" />
         )}
         <a
           href={`/api/jobs/${jobId}/clips/${clip.id}/subtitles?format=srt`}

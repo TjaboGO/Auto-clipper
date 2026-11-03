@@ -42,6 +42,8 @@ och appen:
     ibland medan någon pratar
 15. Lägger in B-roll, gratis videoklipp från Pexels som visar det som sägs (AI:n väljer, eller du
     söker själv), och bakgrundsmusik från dina egna låtar som sänks automatiskt när någon pratar
+16. Exporterar ett klipp som projekt till Premiere Pro och DaVinci Resolve: en ZIP med tidslinjen
+    (XML), videon redan inramad, texterna som ett eget genomskinligt lager, B-roll och musik
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -206,6 +208,11 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   filen), visar procent under nedladdningen och sparar videons titel. Vanliga fel (logga in,
   åldersgräns, privat, borttagen, livesändning, för många förfrågningar) blir begripliga
   meddelanden som säger vad du kan göra.
+- `src/lib/nle.ts` och `src/lib/nleExport.ts` - exporten till Premiere och DaVinci. Tidslinjen
+  skrivs som Final Cut Pro 7 XML, som båda programmen läser. Alla filer görs i klippets storlek
+  och bildfrekvens (videon inramad med 2 s extra i varje ände, grafiken som ProRes 4444 med
+  genomskinlighet, B-roll beskuren), så tidslinjen bara behöver klipp, ingen skalning. Varje
+  kant räknas från den exakta tiden, så klippen glider inte isär från texterna.
 - Jobb körs i en enkel kö i minnet (`src/lib/queue.ts`) och sparas till `storage/jobs.json`, så
   historiken överlever en omstart. Jobb som var igång när servern startades om markeras som
   avbrutna. Inget behov av en separat databas för ett projekt som det här.
@@ -230,6 +237,8 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
 - Varumärke: `GET /api/brand`, `POST /api/brand/fonts?filename=...` (filen som body),
   `DELETE /api/brand/fonts/<id>`, `POST`/`DELETE /api/brand/logo` (bilden som body, `GET` visar
   den), `PUT`/`DELETE /api/brand/style` (Min stil).
+- Projekt för Premiere och DaVinci: `POST /api/jobs/<id>/clips/<clipId>/project` börjar bygga,
+  `GET .../project?status` visar hur det går och `GET .../project` laddar ner ZIP-filen.
 - YouTube-cookies: `GET` (bara status, aldrig innehållet), `PUT` (cookies.txt som body) och
   `DELETE /api/youtube-cookies`.
 

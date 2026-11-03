@@ -172,29 +172,11 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
         `;[${current}][br${i}]overlay=0:0:eof_action=pass:enable='between(t,${num(b.start)},${num(b.end)})'[vb${i}]`;
       current = `vb${i}`;
     });
-    if (input.logo) {
-      const { rect, opacity } = input.logo;
-      graph +=
-        `;[1:v]scale=${rect.w}:${rect.h},format=rgba,colorchannelmixer=aa=${num(opacity)}[logo]` +
-        `;[${current}][logo]overlay=${rect.x}:${rect.y}[vl]`;
-      current = 'vl';
-    }
-    (input.emojis ?? []).forEach((e, i) => {
-      const rise = Math.round(EMOJI_RISE * e.rect.size);
-      graph +=
-        `;[${e.input}:v]format=rgba,scale=${e.rect.size}:${e.rect.size},` +
-        `fade=t=in:st=${num(e.start)}:d=${num(EMOJI_POP)}:alpha=1[em${i}]` +
-        `;[${current}][em${i}]overlay=x=${e.rect.x}:y='${e.rect.y}+${rise}*max(0,1-(t-${num(e.start)})/${num(EMOJI_POP)})'` +
-        `:enable='between(t,${num(e.start)},${num(e.end)})'[ve${i}]`;
-      current = `ve${i}`;
-    });
-    graph += `;[${current}]${input.captionsFilter}[vout]`;
+    const layers = logoAndEmojis(current, input, '');
+    graph += layers.graph + `;[${layers.label}]${input.captionsFilter}[vout]`;
   } else if (input.logo) {
     const { rect, opacity } = input.logo;
-    graph =
-      `${video}[base];` +
-      `[1:v]scale=${rect.w}:${rect.h},format=rgba,colorchannelmixer=aa=${num(opacity)}[logo];` +
-      `[base][logo]overlay=${rect.x}:${rect.y},${input.captionsFilter}[vout]`;
+    graph = `${video}[base];${logoFilter(rect, opacity)};[base][logo]overlay=${rect.x}:${rect.y},${input.captionsFilter}[vout]`;
   }
   const maps = ['-map', '[vout]'];
   const speech = speechAudio(input, whole);
@@ -222,6 +204,50 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
     `;[voice][ducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95[mixed]`;
   maps.push('-map', '[mixed]');
   return { graph, maps };
+}
+
+/** The logo (input 1), scaled and see-through as set, labelled [logo]. */
+function logoFilter(rect: { w: number; h: number }, opacity: number): string {
+  return `[1:v]scale=${rect.w}:${rect.h},format=rgba,colorchannelmixer=aa=${num(opacity)}[logo]`;
+}
+
+/**
+ * The logo and then the emojis laid over [label]. `overlayOptions` is
+ * added to each overlay (":format=auto" keeps a see-through picture
+ * see-through). Returns the graph (starting with ";") and the new label.
+ */
+function logoAndEmojis(
+  label: string,
+  input: Pick<RenderGraphInput, 'logo' | 'emojis'>,
+  overlayOptions: string,
+): { graph: string; label: string } {
+  let graph = '';
+  let current = label;
+  if (input.logo) {
+    const { rect, opacity } = input.logo;
+    graph += `;${logoFilter(rect, opacity)};[${current}][logo]overlay=${rect.x}:${rect.y}${overlayOptions}[vl]`;
+    current = 'vl';
+  }
+  (input.emojis ?? []).forEach((e, i) => {
+    const rise = Math.round(EMOJI_RISE * e.rect.size);
+    graph +=
+      `;[${e.input}:v]format=rgba,scale=${e.rect.size}:${e.rect.size},` +
+      `fade=t=in:st=${num(e.start)}:d=${num(EMOJI_POP)}:alpha=1[em${i}]` +
+      `;[${current}][em${i}]overlay=x=${e.rect.x}:y='${e.rect.y}+${rise}*max(0,1-(t-${num(e.start)})/${num(EMOJI_POP)})'` +
+      `:enable='between(t,${num(e.start)},${num(e.end)})'${overlayOptions}[ve${i}]`;
+    current = `ve${i}`;
+  });
+  return { graph, label: current };
+}
+
+/**
+ * The clip's graphics on their own, for the project export: captions,
+ * title, logo and emojis over a see-through frame (input 0, a transparent
+ * color source), so an editing program can lay them over the video.
+ */
+export function buildGraphicsGraph(input: Pick<RenderGraphInput, 'logo' | 'emojis' | 'captionsFilter'>): string {
+  const layers = logoAndEmojis('0:v', input, ':format=auto');
+  return `${layers.graph.replace(/^;/, '')}${layers.graph ? ';' : ''}[${layers.label}]${input.captionsFilter}:alpha=1,format=yuva444p10le[vout]`;
 }
 
 /** Length of the finished clip (the kept parts together). */

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { ProjectExport } from './ProjectExport';
 
 interface Clip {
   id: string;
@@ -92,6 +93,9 @@ export function ClipCard({ jobId, clip }: { jobId: string; clip: Clip }) {
           >
             {copied ? 'Kopierat!' : 'Kopiera text'}
           </button>
+          {clip.editable && !busy && (
+            <ProjectExport jobId={jobId} clipId={clip.id} version={clip.version} className="col-span-2" />
+          )}
           <a
             href={`/api/jobs/${jobId}/clips/${clip.id}/subtitles?format=srt`}
             className="col-span-2 text-center text-xs text-gray-400 hover:text-white py-1"
