@@ -68,6 +68,27 @@ export interface RenderedClip extends ClipSuggestion {
   /** Set while a render from the editor is waiting, running or has failed. */
   renderState?: { status: 'queued' | 'rendering' | 'error'; error?: string; at: string };
   editedAt?: string;
+  /** The latest upload to YouTube, if any. */
+  youtube?: YoutubeUpload;
+}
+
+export type YoutubePrivacy = 'public' | 'unlisted' | 'private';
+
+/** A clip's upload to your YouTube channel. */
+export interface YoutubeUpload {
+  status: 'queued' | 'uploading' | 'done' | 'error';
+  /** 0-1 while uploading. */
+  progress?: number;
+  title: string;
+  privacy: YoutubePrivacy;
+  /** When YouTube makes it public (it stays private until then). */
+  publishAt?: string;
+  videoId?: string;
+  url?: string;
+  error?: string;
+  /** The clip's video file that was uploaded (a new render is a new file). */
+  filename: string;
+  at: string;
 }
 
 export interface JobProgressStep {

@@ -51,6 +51,20 @@ export const config = {
   pexelsKeyFromEnv: process.env.PEXELS_API_KEY || '',
   pexelsApiUrl: (process.env.PEXELS_API_URL || 'https://api.pexels.com').replace(/\/+$/, ''),
   brollDir: path.join(/* turbopackIgnore: true */ storageDir, 'broll'),
+  // Publishing to YouTube: your own Google OAuth app (GOOGLE_CLIENT_ID and
+  // GOOGLE_CLIENT_SECRET, or saved on the settings page) and the account
+  // you connect with it. The Google addresses can be changed for tests.
+  youtubeAppFile: path.join(/* turbopackIgnore: true */ storageDir, 'youtube-app.json'),
+  youtubeAccountFile: path.join(/* turbopackIgnore: true */ storageDir, 'youtube-account.json'),
+  googleClientIdFromEnv: process.env.GOOGLE_CLIENT_ID || '',
+  googleClientSecretFromEnv: process.env.GOOGLE_CLIENT_SECRET || '',
+  googleAuthUrl: process.env.GOOGLE_AUTH_URL || 'https://accounts.google.com/o/oauth2/v2/auth',
+  googleTokenUrl: process.env.GOOGLE_TOKEN_URL || 'https://oauth2.googleapis.com/token',
+  googleRevokeUrl: process.env.GOOGLE_REVOKE_URL || 'https://oauth2.googleapis.com/revoke',
+  youtubeApiUrl: (process.env.YOUTUBE_API_URL || 'https://www.googleapis.com').replace(/\/+$/, ''),
+  // The app's address as people reach it (https://clips.example.com), for
+  // the address Google sends you back to. Empty = taken from the request.
+  publicUrl: (process.env.PUBLIC_URL || '').replace(/\/+$/, ''),
 
   // Long audio is transcribed in chunks of this many seconds. Keeps every
   // Gemini response far below the output token limit and keeps timestamps
