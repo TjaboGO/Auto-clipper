@@ -16,10 +16,12 @@ test('valid options come through, bad ones fall back to the defaults', () => {
     zoom: 'medium',
     music: 'm-abcdef1234',
     broll: true,
+    fillers: true,
+    pauses: true,
   };
   assert.deepEqual(sanitizeJobOptions(good), { ...good, topic: 'pengar och sparande' });
   assert.deepEqual(
-    sanitizeJobOptions({ clipLength: 'forever', aspect: '3:2', captionPreset: 'comic', keywords: 'yes', topic: 42, visual: 'x', translate: 'klingon', emojis: 'ja', zoom: 'max', music: '../etc/passwd', broll: 1 }),
+    sanitizeJobOptions({ clipLength: 'forever', aspect: '3:2', captionPreset: 'comic', keywords: 'yes', topic: 42, visual: 'x', translate: 'klingon', emojis: 'ja', zoom: 'max', music: '../etc/passwd', broll: 1, fillers: 'ja', pauses: 0 }),
     defaultJobOptions(),
   );
   assert.deepEqual(sanitizeJobOptions('nonsense'), defaultJobOptions());

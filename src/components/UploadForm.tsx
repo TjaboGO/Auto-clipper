@@ -201,6 +201,8 @@ export function UploadForm() {
         ? (brand?.templates?.find((t) => t.id === options.captionPreset)?.name ?? 'Mall')
         : captionPreset(options.captionPreset).label,
     options.keywords ? 'nyckelord' : null,
+    options.fillers ? 'utan utfyllnadsord' : null,
+    options.pauses ? 'utan pauser' : null,
     options.emojis ? 'emojis' : null,
     options.zoom !== 'off' ? 'zoom' : null,
     options.music ? 'musik' : null,
@@ -354,6 +356,30 @@ export function UploadForm() {
                 type="checkbox"
                 checked={options.keywords}
                 onChange={(e) => set({ keywords: e.target.checked })}
+                className="mt-1 h-4 w-4 accent-accent-500"
+              />
+            </label>
+            <label className="flex items-start justify-between gap-4 cursor-pointer">
+              <span>
+                <span className="block text-sm">Ta bort utfyllnadsord</span>
+                <span className="block text-xs text-gray-400">Klipper bort eh, öh, hmm och liknande direkt.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={options.fillers}
+                onChange={(e) => set({ fillers: e.target.checked })}
+                className="mt-1 h-4 w-4 accent-accent-500"
+              />
+            </label>
+            <label className="flex items-start justify-between gap-4 cursor-pointer">
+              <span>
+                <span className="block text-sm">Ta bort pauser</span>
+                <span className="block text-xs text-gray-400">Klipper bort tystnad mellan meningar, så det går snabbare.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={options.pauses}
+                onChange={(e) => set({ pauses: e.target.checked })}
                 className="mt-1 h-4 w-4 accent-accent-500"
               />
             </label>

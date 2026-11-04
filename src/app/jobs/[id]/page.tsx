@@ -7,6 +7,7 @@ import { JobProgress } from '@/components/JobProgress';
 import { ClipCard } from '@/components/ClipCard';
 import { SearchMore } from '@/components/SearchMore';
 import { Chapters } from '@/components/Chapters';
+import { ScheduleAll } from '@/components/ScheduleAll';
 import { captionPreset } from '@/lib/edit/presets';
 import { clipLength, formatClock, isTemplateChoice, type JobOptions } from '@/lib/jobOptions';
 import { captionLanguage } from '@/lib/edit/translation';
@@ -61,6 +62,8 @@ function optionLabels(options?: JobOptions, watched?: boolean): string[] {
     options.aspect,
     options.captionPreset === 'mine' ? 'Min stil' : isTemplateChoice(options.captionPreset) ? 'Mall' : captionPreset(options.captionPreset).label,
     options.keywords ? 'Nyckelord' : '',
+    options.fillers ? 'Utan utfyllnadsord' : '',
+    options.pauses ? 'Utan pauser' : '',
     options.emojis ? 'Emojis' : '',
     options.zoom && options.zoom !== 'off' ? 'Zoom' : '',
     options.music ? 'Musik' : '',
@@ -226,7 +229,8 @@ export default function JobPage() {
           >
             Ladda ner alla klipp (ZIP)
           </a>
-          <span className="text-xs text-gray-500">Med undertexter (.srt) och en fil med bildtexter och hashtags.</span>
+          <span className="text-xs text-gray-500 mr-auto">Med undertexter (.srt) och en fil med bildtexter och hashtags.</span>
+          <ScheduleAll jobId={job.id} clips={clips} onStarted={() => setPollKey((k) => k + 1)} />
         </div>
       )}
 

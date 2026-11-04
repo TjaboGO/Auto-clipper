@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { config } from './config';
@@ -13,7 +14,7 @@ import { clipWords, endAfterWord, startBeforeWord } from './edit/timeline';
 import { upgradeEdit } from './edit/presets';
 import { needsFramingAnalysis } from './editorWords';
 import { timeWords } from './wordTiming';
-import type { ClipEdit, ClipEditorData, TimeRange } from './edit/types';
+import type { AspectRatio, ClipEdit, ClipEditorData, TimeRange } from './edit/types';
 import type { Job, RenderedClip } from './types';
 
 // ---------------------------------------------------------------------------
@@ -397,6 +398,40 @@ export function queueClipRender(jobId: string, clipId: string): boolean {
   updateClip(jobId, clipId, { renderState: { status: 'queued', at: new Date().toISOString() } });
   renderQueue.push(() => renderEditedClip(jobId, clipId));
   return true;
+}
+
+/**
+ * A copy of the clip in another format (or the same one, as a variant to
+ * edit separately): a new clip with the same words, edits and framing,
+ * placed right after it and rendered in the queue.
+ */
+export function duplicateClip(jobId: string, clipId: string, aspect: AspectRatio): RenderedClip {
+  const job = jobStore.get(jobId);
+  const clip = job?.clips?.find((c) => c.id === clipId);
+  if (!job?.clips || !clip) throw new Error('Klippet finns inte.');
+  if (!clipEditable(job, clipId)) throw new Error('Källvideon är borttagen, så klippet kan inte kopieras.');
+  const data = readEditorData(jobId, clipId);
+  const edit = readClipEdit(jobId, clipId);
+  if (!data || !edit) throw new Error('Klippets redigeringsdata saknas.');
+  const id = crypto.randomUUID();
+  const index = job.clips.reduce((max, c) => Math.max(max, Number(/^clip_(\d+)/.exec(c.filename)?.[1] ?? 0)), 0) + 1;
+  writeEditorData(jobId, id, data);
+  writeClipEdit(jobId, id, { ...edit, aspect });
+  const copy: RenderedClip = {
+    ...clip,
+    id,
+    // Version 0: the first render makes clip_N_v1.mp4.
+    filename: `clip_${index}.mp4`,
+    version: 0,
+    youtube: undefined,
+    youtubeHistory: undefined,
+    renderState: undefined,
+    editedAt: new Date().toISOString(),
+  };
+  const at = job.clips.findIndex((c) => c.id === clipId);
+  jobStore.update(jobId, { clips: [...job.clips.slice(0, at + 1), copy, ...job.clips.slice(at + 1)] });
+  queueClipRender(jobId, id);
+  return copy;
 }
 
 // ---------------------------------------------------------------------------

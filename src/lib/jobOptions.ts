@@ -67,6 +67,10 @@ export interface JobOptions {
   music: string;
   /** Let the AI put stock video from Pexels over the clips (needs a Pexels key). */
   broll: boolean;
+  /** Cut out filler sounds (eh, öh, um ...) right away. */
+  fillers: boolean;
+  /** Cut out pauses right away. */
+  pauses: boolean;
 }
 
 export const MAX_TOPIC_LENGTH = 200;
@@ -87,6 +91,8 @@ export function defaultJobOptions(): JobOptions {
     zoom: 'off',
     music: '',
     broll: false,
+    fillers: false,
+    pauses: false,
   };
 }
 
@@ -131,6 +137,8 @@ export function sanitizeJobOptions(raw: unknown): JobOptions {
     zoom: pick(raw.zoom, ZOOM_LEVELS.map((l) => l.id), defaults.zoom),
     music: typeof raw.music === 'string' && /^m-[0-9a-f]{6,40}$/.test(raw.music) ? raw.music : defaults.music,
     broll: typeof raw.broll === 'boolean' ? raw.broll : defaults.broll,
+    fillers: typeof raw.fillers === 'boolean' ? raw.fillers : defaults.fillers,
+    pauses: typeof raw.pauses === 'boolean' ? raw.pauses : defaults.pauses,
   };
 }
 

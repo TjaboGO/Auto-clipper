@@ -55,6 +55,9 @@ och appen:
     bort: varannan del visas lite närmare, eller en kort vit blixt vid varje klipp
 21. Skriver kapitel för hela videon (att klistra in i YouTube-beskrivningen) och färdiga
     inläggstexter per klipp för TikTok, Instagram, YouTube Shorts, LinkedIn och X
+22. Tar bort utfyllnadsord och pauser redan när klippen skapas (om du vill), gör en kopia av ett
+    klipp i ett annat format med ett klick, och schemalägger alla klipp i ett jobb på YouTube med
+    jämna mellanrum, bästa klippet först
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -240,8 +243,11 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
 - Båda tar valfritt `options` (JSON, som query-parameter vid uppladdning):
   `{ "clipLength": "auto|short|medium|long|xlong", "aspect": "9:16|1:1|4:5|16:9",
   "captionPreset": "karaoke|box|pop|word|clean|mine", "keywords": true, "topic": "pengar",
-  "range": { "start": 60, "end": 600 }, "visual": "auto|on|off" }`. `visual` styr om Gemini
+  "range": { "start": 60, "end": 600 }, "visual": "auto|on|off", "fillers": true, "pauses": true }`. `visual` styr om Gemini
   tittar på bilden: när det är lite prat (`auto`), alltid, eller aldrig. `mine` är Min stil.
+- `POST /api/jobs/<id>/clips/<clipId>/duplicate` med `{ "aspect": "1:1" }` gör en kopia i ett annat
+  format, och `POST /api/jobs/<id>/youtube` med `{ "clipIds", "firstAt", "everyHours" }`
+  schemalägger flera klipp på YouTube, ett i taget.
 - `POST /api/jobs/<id>/chapters` skriver kapitel för hela videon (minst tre, första på 0:00), och
   `POST /api/jobs/<id>/clips/<clipId>/posts` skriver inläggstexter per plattform för ett klipp.
 - `POST /api/jobs/<id>/search` med `{ "topic": "...", "clipCount": 3, "clipLength": "short",

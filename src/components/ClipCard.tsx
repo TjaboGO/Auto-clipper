@@ -26,8 +26,34 @@ interface Clip {
   posts?: ClipPosts;
 }
 
+const FORMATS: { id: string; label: string }[] = [
+  { id: '9:16', label: '9:16' },
+  { id: '1:1', label: '1:1' },
+  { id: '4:5', label: '4:5' },
+  { id: '16:9', label: '16:9' },
+];
+
 export function ClipCard({ jobId, clip, onChange }: { jobId: string; clip: Clip; onChange?: () => void }) {
   const [copied, setCopied] = useState(false);
+  const [formats, setFormats] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+
+  async function copyTo(aspect: string) {
+    setCopyError(null);
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/clips/${clip.id}/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ aspect }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `Fel ${res.status}`);
+      setFormats(false);
+      onChange?.();
+    } catch (err) {
+      setCopyError(err instanceof Error ? err.message : String(err));
+    }
+  }
   const videoSrc = `/api/clips/${jobId}/${clip.filename}`;
   const thumbSrc = `/api/clips/${jobId}/${clip.filename.replace(/\.mp4$/, '.jpg')}`;
   const fullCaption = `${clip.caption}\n\n${clip.hashtags.map((h) => `#${h}`).join(' ')}`;
@@ -105,6 +131,38 @@ export function ClipCard({ jobId, clip, onChange }: { jobId: string; clip: Clip;
           {!busy && (
             <div className="col-span-2">
               <YoutubePublish jobId={jobId} clipId={clip.id} upload={clip.youtube} onStarted={onChange} />
+            </div>
+          )}
+          {clip.editable && !busy && (
+            <div className="col-span-2">
+              {formats ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-gray-400 mr-auto">Kopia i format</span>
+                  {FORMATS.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => copyTo(f.id)}
+                      className="rounded-md bg-base-800 hover:bg-base-700 px-2 py-1 text-xs"
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => setFormats(false)} className="px-1 text-xs text-gray-500 hover:text-white" aria-label="Avbryt">
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setFormats(true)}
+                  className="w-full text-center text-xs font-medium bg-base-800 hover:bg-base-700 rounded-lg py-2 transition-colors"
+                  title="Ett nytt klipp med samma redigering i ett annat format, till exempel kvadratiskt för Instagram"
+                >
+                  Kopia i annat format
+                </button>
+              )}
+              {copyError && <p className="text-xs text-red-300 mt-1">{copyError}</p>}
             </div>
           )}
           {clip.editable && !busy && (

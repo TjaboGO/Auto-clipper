@@ -288,6 +288,8 @@ async function renderSuggestions(opts: {
         music: options.music && musicTrack(options.music) ? { track: options.music, volume: DEFAULT_MUSIC_VOLUME } : null,
       });
       if (mine) edit = withStyle(edit, mine, hasLogo);
+      edit.removeFillers = options.fillers ?? false;
+      edit.removePauses = options.pauses ?? false;
       const spoken = clipWords(data.words, edit);
       if (options.keywords && suggestion.keywords?.length) {
         for (const wordId of keywordWordIds(spoken, suggestion.keywords)) {
