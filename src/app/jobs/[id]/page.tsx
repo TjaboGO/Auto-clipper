@@ -6,10 +6,11 @@ import { useParams, useRouter } from 'next/navigation';
 import { JobProgress } from '@/components/JobProgress';
 import { ClipCard } from '@/components/ClipCard';
 import { SearchMore } from '@/components/SearchMore';
+import { Chapters } from '@/components/Chapters';
 import { captionPreset } from '@/lib/edit/presets';
-import { clipLength, formatClock, type JobOptions } from '@/lib/jobOptions';
+import { clipLength, formatClock, isTemplateChoice, type JobOptions } from '@/lib/jobOptions';
 import { captionLanguage } from '@/lib/edit/translation';
-import type { ClipScores, YoutubeUpload } from '@/lib/types';
+import type { Chapter, ClipPosts, ClipScores, YoutubeUpload } from '@/lib/types';
 
 interface Clip {
   id: string;
@@ -26,6 +27,7 @@ interface Clip {
   editable?: boolean;
   renderState?: { status: 'queued' | 'rendering' | 'error'; error?: string };
   youtube?: YoutubeUpload;
+  posts?: ClipPosts;
 }
 
 interface JobData {
@@ -44,6 +46,9 @@ interface JobData {
   watched?: boolean;
   finishedAt?: string;
   lastSearch?: { topic: string; at: string; added: number; message: string };
+  hasTranscript?: boolean;
+  sourceDurationSec?: number;
+  chapters?: { items: Chapter[]; at: string };
 }
 
 /** What was chosen for the job (and whether Gemini watched it), as short labels. */
@@ -54,7 +59,7 @@ function optionLabels(options?: JobOptions, watched?: boolean): string[] {
     options.topic ? `Om: ${options.topic}` : '',
     options.clipLength === 'auto' ? '' : clipLength(options.clipLength).hint,
     options.aspect,
-    options.captionPreset === 'mine' ? 'Min stil' : captionPreset(options.captionPreset).label,
+    options.captionPreset === 'mine' ? 'Min stil' : isTemplateChoice(options.captionPreset) ? 'Mall' : captionPreset(options.captionPreset).label,
     options.keywords ? 'Nyckelord' : '',
     options.emojis ? 'Emojis' : '',
     options.zoom && options.zoom !== 'off' ? 'Zoom' : '',
@@ -254,6 +259,12 @@ export default function JobPage() {
 
       {isDone && clips.length === 0 && (
         <p className="text-gray-400 mt-8">Inga klipp kunde skapas från den här videon.</p>
+      )}
+
+      {isDone && job.hasTranscript && (job.sourceDurationSec ?? 0) >= 60 && (
+        <div className="mt-10">
+          <Chapters jobId={job.id} duration={job.sourceDurationSec ?? 0} saved={job.chapters} />
+        </div>
       )}
 
       {isDone && job.canSearch && (

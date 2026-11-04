@@ -31,6 +31,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       sourceRetentionDays: config.sourceRetentionDays,
       canSearch: canSearch(job.id),
       watched: !!visual,
+      hasTranscript: (job.transcript?.length ?? 0) > 0,
       visualMoments: visual?.moments.length ?? 0,
     },
   });

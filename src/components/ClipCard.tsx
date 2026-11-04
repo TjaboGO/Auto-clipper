@@ -2,10 +2,11 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { PostTexts } from './PostTexts';
 import { ProjectExport } from './ProjectExport';
 import { ScoreBadge } from './ScoreBadge';
 import { YoutubePublish } from './YoutubePublish';
-import type { ClipScores, YoutubeUpload } from '@/lib/types';
+import type { ClipPosts, ClipScores, YoutubeUpload } from '@/lib/types';
 
 interface Clip {
   id: string;
@@ -22,6 +23,7 @@ interface Clip {
   editable?: boolean;
   renderState?: { status: 'queued' | 'rendering' | 'error'; error?: string };
   youtube?: YoutubeUpload;
+  posts?: ClipPosts;
 }
 
 export function ClipCard({ jobId, clip, onChange }: { jobId: string; clip: Clip; onChange?: () => void }) {
@@ -97,6 +99,9 @@ export function ClipCard({ jobId, clip, onChange }: { jobId: string; clip: Clip;
           >
             {copied ? 'Kopierat!' : 'Kopiera text'}
           </button>
+          <div className="col-span-2">
+            <PostTexts jobId={jobId} clipId={clip.id} posts={clip.posts} />
+          </div>
           {!busy && (
             <div className="col-span-2">
               <YoutubePublish jobId={jobId} clipId={clip.id} upload={clip.youtube} onStarted={onChange} />

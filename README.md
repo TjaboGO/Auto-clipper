@@ -53,6 +53,8 @@ och appen:
     som fylls på medan de spelas
 20. Zoomar mjukt (glider in och ut) eller med hopp, och kan dölja hoppen där ord och pauser klippts
     bort: varannan del visas lite närmare, eller en kort vit blixt vid varje klipp
+21. Skriver kapitel för hela videon (att klistra in i YouTube-beskrivningen) och färdiga
+    inläggstexter per klipp för TikTok, Instagram, YouTube Shorts, LinkedIn och X
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -240,6 +242,8 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   "captionPreset": "karaoke|box|pop|word|clean|mine", "keywords": true, "topic": "pengar",
   "range": { "start": 60, "end": 600 }, "visual": "auto|on|off" }`. `visual` styr om Gemini
   tittar på bilden: när det är lite prat (`auto`), alltid, eller aldrig. `mine` är Min stil.
+- `POST /api/jobs/<id>/chapters` skriver kapitel för hela videon (minst tre, första på 0:00), och
+  `POST /api/jobs/<id>/clips/<clipId>/posts` skriver inläggstexter per plattform för ett klipp.
 - `POST /api/jobs/<id>/search` med `{ "topic": "...", "clipCount": 3, "clipLength": "short",
   "watch": true }` hittar fler klipp i ett klart jobb. `watch` låter Gemini titta på videon först,
   om den inte redan gjort det.

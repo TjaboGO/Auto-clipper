@@ -86,7 +86,21 @@ export interface RenderedClip extends ClipSuggestion {
   youtube?: YoutubeUpload;
   /** Earlier finished uploads of the clip, newest first (for the calendar). */
   youtubeHistory?: YoutubeUpload[];
+  /** Texts to post the clip with, written by the AI on request. */
+  posts?: ClipPosts;
 }
+
+/** A chapter of the whole video, for its YouTube description. */
+export interface Chapter {
+  /** Seconds from the start of the video. */
+  start: number;
+  title: string;
+}
+
+export type PostPlatform = 'tiktok' | 'instagram' | 'youtube' | 'linkedin' | 'x';
+
+/** Ready-to-post texts for one clip, per platform. */
+export type ClipPosts = Record<PostPlatform, string> & { at: string };
 
 export type YoutubePrivacy = 'public' | 'unlisted' | 'private';
 
@@ -142,6 +156,8 @@ export interface Job {
   sourceDeletedAt?: string;
   /** When the job first finished; a search for more clips runs after that. */
   finishedAt?: string;
+  /** Chapters of the whole video, made on request. */
+  chapters?: { items: Chapter[]; at: string };
   /** How the latest search for more clips went (shown on the job page). */
   lastSearch?: { topic: string; at: string; added: number; message: string };
 }

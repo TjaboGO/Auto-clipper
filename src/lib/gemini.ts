@@ -16,7 +16,8 @@ import { config } from './config';
 import { screenEdges } from './moments';
 import { openRouterJson } from './openrouter';
 import { EMOJIS, knownEmoji, MAX_EMOJIS } from './edit/emoji';
-import type { ClipScores, ClipSuggestion, TranscriptSegment, VisualKind, VisualMoment } from './types';
+import type { Chapter, ClipScores, ClipSuggestion, PostPlatform, TranscriptSegment, VisualKind, VisualMoment } from './types';
+import { cleanChapters, cleanPosts, MIN_CHAPTER_SECONDS, MIN_CHAPTERS, POST_PLATFORMS } from './chapters';
 
 let cachedClient: GoogleGenAI | null = null;
 
@@ -575,6 +576,55 @@ async function textJson<T>(prompt: string, schema: Schema, level: ThinkingLevel)
   } catch (err) {
     throw explainError(err, config.highlightModel, 'highlight');
   }
+}
+
+const chapterSchema: Schema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: { start: { type: Type.NUMBER }, title: { type: Type.STRING } },
+    required: ['start', 'title'],
+    propertyOrdering: ['start', 'title'],
+  },
+};
+
+/** Chapters for the whole video, from its transcript (for the YouTube description). */
+export async function suggestChapters(transcript: TranscriptSegment[], duration: number): Promise<Chapter[]> {
+  const count = Math.max(MIN_CHAPTERS, Math.min(15, Math.round(duration / 240)));
+  const prompt = `Split this ${Math.round(duration)} second video into chapters for its YouTube \
+description, from the timestamped transcript below. About ${count} chapters, each where a new topic \
+or part starts, at least ${MIN_CHAPTER_SECONDS} seconds long. The first starts at 0. Each has a \
+"start" (seconds, at the start of a transcript line) and a short "title" (2-6 words, no \
+timestamps, no numbering), in the same language as the transcript.
+
+${transcript.map((s) => `[${s.start.toFixed(1)}] ${s.text}`).join('\n')}`;
+  const raw = await textJson<unknown>(prompt, chapterSchema, ThinkingLevel.LOW);
+  return cleanChapters(raw, duration);
+}
+
+const postSchema: Schema = {
+  type: Type.OBJECT,
+  properties: Object.fromEntries(POST_PLATFORMS.map((p) => [p.id, { type: Type.STRING }])),
+  required: POST_PLATFORMS.map((p) => p.id),
+  propertyOrdering: POST_PLATFORMS.map((p) => p.id),
+};
+
+/** Texts to post a clip with, one per platform. */
+export async function writePosts(clip: { title: string; caption: string; hashtags: string[] }, said: string): Promise<Record<PostPlatform, string>> {
+  const prompt = `Write the text to post this short video with, for each platform, in the same \
+language as what is said in it. Make people want to watch; don't promise what isn't in the video.
+
+${POST_PLATFORMS.map((p) => `- "${p.id}" (${p.label}): ${p.hint}`).join('\n')}
+
+Title: ${clip.title}
+Suggested caption: ${clip.caption}
+Hashtags: ${clip.hashtags.map((h) => `#${h}`).join(' ')}
+What is said in the video:
+${said.slice(0, 6000)}`;
+  const raw = await textJson<unknown>(prompt, postSchema, ThinkingLevel.LOW);
+  const posts = cleanPosts(raw);
+  if (!posts) throw new Error('AI:n svarade inte med text för alla plattformar. Försök igen.');
+  return posts;
 }
 
 const translationSchema: Schema = {
