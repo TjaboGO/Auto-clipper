@@ -176,7 +176,7 @@ test('a progress bar fills up over the finished clip, under the captions', () =>
   assert.deepEqual(progress.rect, { x: 0, y: 1908, w: 1080, h: 12 });
   // Two kept parts: 4 s of finished clip.
   const { graph } = buildRenderGraph(input({ progress, kept: [{ start: 0, end: 1 }, { start: 2, end: 5 }] }));
-  assert.match(graph, /\[vbase\];color=c=0xFFD400:s=1080x12:r=30:d=5\[pbar\];\[vbase\]\[pbar\]overlay=x='-w\+W\*min\(1,t\/4\)':y=1908:eof_action=repeat\[vp\];\[vp\]ass=filename='clip\.ass'\[vout\]/);
+  assert.match(graph, /\[vbase\];color=c=0xFFD400:s=1080x12:r=30:d=5\[pbar\];\[vbase\]\[pbar\]overlay=x='-w\+W\*min\(1,t\/4\)':y=1908:eof_action=repeat:shortest=1\[vp\];\[vp\]ass=filename='clip\.ass'\[vout\]/);
   // With a logo too, and at the top.
   const top = { color: '#FFFFFF', rect: progressRect({ w: 1080, h: 1920 }, 'top') };
   const withLogo = buildRenderGraph(input({ progress: top, logo: { rect: { x: 850, y: 43, w: 187, h: 94 }, opacity: 1 } })).graph;
@@ -192,8 +192,23 @@ test('the graphics layer for the project export keeps everything see-through', (
   );
   assert.equal(
     graph,
-    "color=c=0xFF0000:s=1080x12:r=30:d=11[pbar];[0:v][pbar]overlay=x='-w+W*min(1,t/10)':y=1908:eof_action=repeat:format=auto[vp];" +
+    "color=c=0xFF0000:s=1080x12:r=30:d=11[pbar];[0:v][pbar]overlay=x='-w+W*min(1,t/10)':y=1908:eof_action=repeat:shortest=1:format=auto[vp];" +
       "[vp]ass=filename='clip.ass':alpha=1,format=yuva444p10le[vout]",
   );
   assert.equal(buildGraphicsGraph({ out: { w: 1080, h: 1920 }, captionsFilter }, 10), "[0:v]ass=filename='clip.ass':alpha=1,format=yuva444p10le[vout]");
+});
+
+test('a gliding zoom goes through zoompan at a steady frame rate, a jump stays an overlay', () => {
+  const glide = { factor: 1.2, spans: [{ start: 1, end: 3, ramp: 0.25 }] };
+  const { graph } = buildRenderGraph(input({ zoom: { plan: glide, rate: '30000/1001' } }));
+  assert.match(graph, /,fps=30000\/1001,zoompan=z='1\+0\.2\*\(min\(1,clip\(\(it-1\)\/0\.25,0,1\)\*clip\(\(3-it\)\/0\.25,0,1\)\)/);
+  assert.match(graph, /:x='\(iw-iw\/zoom\)\*0\.5':y='\(ih-ih\/zoom\)\*0\.4':d=1:s=1080x1920:fps=30000\/1001,setsar=1,trim=end=5/);
+  const jump = buildRenderGraph(input({ zoom: { plan: { factor: 1.2, spans: [{ start: 1, end: 3, ramp: 0 }] } } })).graph;
+  assert.match(jump, /\[wide\]\[closer\]overlay=0:0:enable='between\(t,1,3\)'/);
+  assert.doesNotMatch(jump, /zoompan/);
+});
+
+test('flashes at the cuts are a white box switched on around each cut', () => {
+  const { graph } = buildRenderGraph(input({ flash: [{ start: 1.97, end: 2.09 }, { start: 3.47, end: 3.59 }] }));
+  assert.match(graph, /drawbox=x=0:y=0:w=iw:h=ih:color=white@0\.45:t=fill:enable='between\(t,1\.97,2\.09\)\+between\(t,3\.47,3\.59\)'/);
 });

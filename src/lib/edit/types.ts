@@ -3,7 +3,7 @@
 // real render) share the exact same logic.
 
 import type { CustomFont } from './fonts';
-import type { ZoomLevel } from './zoom';
+import type { CutTransition, ZoomLevel, ZoomStyle } from './zoom';
 
 export type AspectRatio = '9:16' | '1:1' | '4:5' | '16:9';
 
@@ -148,6 +148,10 @@ export interface ClipEdit {
   broll: BrollItem[];
   /** A bar that shows how far into the clip you are. */
   progress: ProgressBarSettings;
+  /** How the automatic zoom moves: glides, or jumps (older clips: jumps). */
+  zoomStyle: ZoomStyle;
+  /** What happens at the cuts. */
+  transition: CutTransition;
 }
 
 /** Translated captions: each transcript sentence (by its index) in another language. */
@@ -164,6 +168,8 @@ export interface BrandStyle {
   logo: LogoSettings;
   /** Missing in styles saved before these existed: the clip keeps its own. */
   zoom?: ZoomLevel;
+  zoomStyle?: ZoomStyle;
+  transition?: CutTransition;
   progress?: ProgressBarSettings;
   savedAt: string;
 }

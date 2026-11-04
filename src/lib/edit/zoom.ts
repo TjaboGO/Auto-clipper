@@ -70,3 +70,124 @@ export function zoomBox(box: { x: number; y: number; w: number; h: number }, fac
   const h = box.h / factor;
   return { x: box.x + (box.w - w) * ZOOM_CENTER.x, y: box.y + (box.h - h) * ZOOM_CENTER.y, w, h };
 }
+
+// ---------------------------------------------------------------------------
+// Smooth zoom and transitions at the cuts
+
+/** 'smooth': glide in and out. 'cut': jump, like switching camera angles. */
+export type ZoomStyle = 'smooth' | 'cut';
+
+/** What happens where words or pauses were cut out. */
+export type CutTransition = 'none' | 'punch' | 'flash';
+
+export const ZOOM_STYLES: { id: ZoomStyle; label: string }[] = [
+  { id: 'smooth', label: 'Mjuk' },
+  { id: 'cut', label: 'Hopp' },
+];
+
+export const CUT_TRANSITIONS: { id: CutTransition; label: string; hint: string }[] = [
+  { id: 'none', label: 'Ingen', hint: 'Klippen syns som de är.' },
+  { id: 'punch', label: 'Zooma varannan', hint: 'Varannan del visas lite närmare, så att hoppen i bilden döljs.' },
+  { id: 'flash', label: 'Blixt', hint: 'En kort vit blixt vid varje klipp.' },
+];
+
+/** Seconds a smooth zoom takes to glide in (and out). */
+export const ZOOM_RAMP = 0.25;
+/** How close "Zooma varannan" goes when the clip has no zoom of its own. */
+export const PUNCH_FACTOR = 1.12;
+/** The flash at a cut: from a little before to a little after, at this strength. */
+export const FLASH = { before: 0.03, after: 0.09, alpha: 0.45 };
+
+/** A stretch of the finished clip that's zoomed in, and how long it glides (0 = jump). */
+export interface ZoomSpan extends TimeRange {
+  ramp: number;
+}
+
+export interface ZoomPlan {
+  factor: number;
+  spans: ZoomSpan[];
+}
+
+/** Where the cuts are in the finished clip (between the kept parts). */
+export function cutTimes(kept: TimeRange[]): number[] {
+  const times: number[] = [];
+  let at = 0;
+  kept.forEach((r, i) => {
+    at += r.end - r.start;
+    if (i < kept.length - 1) times.push(at);
+  });
+  return times;
+}
+
+/** Every second kept part, on the finished clip's timeline (for "Zooma varannan"). */
+export function punchSpans(kept: TimeRange[]): ZoomSpan[] {
+  const spans: ZoomSpan[] = [];
+  let at = 0;
+  kept.forEach((r, i) => {
+    const length = r.end - r.start;
+    if (i % 2 === 1) spans.push({ start: at, end: at + length, ramp: 0 });
+    at += length;
+  });
+  return spans;
+}
+
+/** When the flashes show, on the finished clip's timeline. */
+export function flashWindows(kept: TimeRange[]): TimeRange[] {
+  return cutTimes(kept).map((t) => ({ start: Math.max(0, t - FLASH.before), end: t + FLASH.after }));
+}
+
+/**
+ * The clip's zooms: the automatic ones (smooth or jumping) and "Zooma
+ * varannan" at the cuts (always a jump, since the picture jumps there
+ * anyway). Null when nothing zooms.
+ */
+export function zoomPlan(
+  edit: { zoom: ZoomLevel; zoomStyle?: ZoomStyle; transition?: CutTransition },
+  spoken: OutputWord[],
+  kept: TimeRange[],
+  clipLength: number,
+): ZoomPlan | null {
+  const spans: ZoomSpan[] = [];
+  if (edit.zoom !== 'off') {
+    const ramp = edit.zoomStyle === 'smooth' ? ZOOM_RAMP : 0;
+    spans.push(...zoomSegments(spoken, clipLength).map((r) => ({ ...r, ramp })));
+  }
+  if (edit.transition === 'punch') spans.push(...punchSpans(kept));
+  if (spans.length === 0) return null;
+  return { factor: edit.zoom !== 'off' ? zoomFactor(edit.zoom) : PUNCH_FACTOR, spans: spans.sort((a, b) => a.start - b.start) };
+}
+
+/** How far in one span is at `t`, 0-1 before easing (a span shorter than two ramps never gets all the way). */
+function spanAmount(span: ZoomSpan, t: number): number {
+  if (span.ramp <= 0) return t >= span.start && t < span.end ? 1 : 0;
+  const rise = Math.min(1, Math.max(0, (t - span.start) / span.ramp));
+  const fall = Math.min(1, Math.max(0, (span.end - t) / span.ramp));
+  return rise * fall;
+}
+
+/** How zoomed in the clip is at `t`, 0-1, eased: the same sum as the render's expression. */
+export function zoomAmount(plan: ZoomPlan | null, t: number): number {
+  if (!plan) return 0;
+  const u = Math.min(1, plan.spans.reduce((sum, s) => sum + spanAmount(s, t), 0));
+  return u * u * (3 - 2 * u);
+}
+
+function n(value: number): string {
+  return String(Math.round(value * 1000) / 1000);
+}
+
+/** The ffmpeg expression for how zoomed in the clip is (0-1, eased), in the time variable `t`. */
+export function zoomAmountExpr(plan: ZoomPlan, t = 'it'): string {
+  const terms = plan.spans.map((s) =>
+    s.ramp <= 0
+      ? `between(${t},${n(s.start)},${n(s.end)})`
+      : `clip((${t}-${n(s.start)})/${n(s.ramp)},0,1)*clip((${n(s.end)}-${t})/${n(s.ramp)},0,1)`,
+  );
+  const u = `min(1,${terms.join('+')})`;
+  return `${u}*${u}*(3-2*${u})`;
+}
+
+/** Whether any of the plan glides (else the render can use the cheaper jump). */
+export function planGlides(plan: ZoomPlan | null): boolean {
+  return !!plan && plan.spans.some((s) => s.ramp > 0);
+}

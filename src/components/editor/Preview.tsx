@@ -7,7 +7,7 @@ import { logoRect, progressRect } from '@/lib/edit/layout';
 import type { ClipEdit, LogoImage, TimeRange } from '@/lib/edit/types';
 import { drawCaptions, drawCropView, drawEmoji, drawFrame, drawLogo, drawTitle, type FrameSpec } from './draw';
 import { emojiFile, emojiPop, type EmojiShow } from '@/lib/edit/emoji';
-import { zoomedAt } from '@/lib/edit/zoom';
+import { FLASH, zoomAmount, type ZoomPlan } from '@/lib/edit/zoom';
 import { coverRect, type BrollShow } from '@/lib/edit/broll';
 import { formatTime } from './format';
 import type { PreviewInfo } from './types';
@@ -43,8 +43,10 @@ interface PreviewProps {
   /** Emojis over the captions (clip timeline), and where they go. */
   emojis: EmojiShow[];
   emojiRect: { x: number; y: number; size: number };
-  /** Punch-in zooms (clip timeline) and how close. */
-  zoom: { factor: number; segments: TimeRange[] };
+  /** The zooms (finished clip's timeline), or null. */
+  zoom: ZoomPlan | null;
+  /** White flashes at the cuts (finished clip's timeline). */
+  flash: TimeRange[];
   /** Background music to play along (looped), or null. */
   music: { url: string; volume: number; duration: number } | null;
   /** Stock video over parts of the clip (clip timeline). */
@@ -114,7 +116,11 @@ export function Preview(props: PreviewProps) {
     const k = canvas.width / p.spec.out.w;
     const o = toOutputTime(p.kept, t);
     syncMusic(musicRef.current, p.music, video.paused || o === null ? null : o);
-    drawFrame(ctx, video, p.spec, t, o !== null && zoomedAt(p.zoom.segments, o) ? p.zoom.factor : 1);
+    drawFrame(ctx, video, p.spec, t, o !== null && p.zoom ? 1 + (p.zoom.factor - 1) * zoomAmount(p.zoom, o) : 1);
+    if (o !== null && p.flash.some((f) => o >= f.start && o <= f.end)) {
+      ctx.fillStyle = `rgba(255,255,255,${FLASH.alpha})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
     if (o !== null) {
       for (const show of p.broll) {
         const clip = brollVideos.current.get(show.url);

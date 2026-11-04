@@ -9,7 +9,9 @@ import { captionFont, isCustomFontId } from './edit/fonts';
 import { captionMetrics, captionPages } from './edit/captionLayout';
 import { clipEmojiShows, emojiFile, emojiRect } from './edit/emoji';
 import { translatedWords } from './edit/translation';
-import { zoomFactor, zoomSegments } from './edit/zoom';
+import { flashWindows, planGlides, zoomPlan } from './edit/zoom';
+import { ffmpegRate, nleRate } from './nle';
+import { probeFrameRate } from './probe';
 import { brollShows } from './edit/broll';
 import { brollPath, downloadVideo } from './pexels';
 import { defaultCaptionPosition, framePanels, logoRect, OUTPUT_SIZES, progressRect, resolveLayout, type Panel, type ResolvedLayout } from './edit/layout';
@@ -183,6 +185,8 @@ export async function renderClipEdit(opts: {
   // The parts of a split screen, facecam, screen or group layout, on the clip's timeline.
   const parts = panels?.map((p) => ({ ...p, keyframes: keyframesForRange(p.keyframes, edit.start, edit.end) }));
 
+  // Zooms (and "Zooma varannan") only where there's one picture to zoom into.
+  const plan = layout === 'single' ? zoomPlan(edit, spoken, kept, duration) : null;
   const { graph, maps } = buildRenderGraph({
     source: data.source,
     out,
@@ -198,7 +202,8 @@ export async function renderClipEdit(opts: {
     broll,
     music,
     progress: graphics.progress,
-    zoom: layout === 'single' && edit.zoom !== 'off' ? { factor: zoomFactor(edit.zoom), segments: zoomSegments(spoken, duration) } : undefined,
+    zoom: plan ? { plan, rate: planGlides(plan) ? ffmpegRate(nleRate(await probeFrameRate(sourcePath))) : undefined } : undefined,
+    flash: edit.transition === 'flash' ? flashWindows(kept) : undefined,
   });
   // A clip with many cuts has a long graph: pass it as a file, not an argument.
   const graphPath = path.join(workDir, `${name}.filtergraph`);

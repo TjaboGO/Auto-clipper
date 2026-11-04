@@ -2,7 +2,7 @@ import { allFonts } from './fonts';
 import { PANEL_SIZE_RANGE } from './layout';
 import { captionLanguage } from './translation';
 import { knownEmoji } from './emoji';
-import { ZOOM_LEVELS, type ZoomLevel } from './zoom';
+import { CUT_TRANSITIONS, ZOOM_LEVELS, ZOOM_STYLES, type ZoomLevel } from './zoom';
 import type {
   AspectRatio,
   BrandStyle,
@@ -146,6 +146,8 @@ export function defaultEdit(opts: {
     music: opts.music ?? null,
     broll: [],
     progress: { ...DEFAULT_PROGRESS },
+    zoomStyle: 'smooth',
+    transition: 'none',
   };
 }
 
@@ -227,6 +229,9 @@ export function upgradeEdit(edit: ClipEdit): ClipEdit {
     music: sanitizeMusic(edit.music, null),
     broll: sanitizeBroll(edit.broll, []),
     progress: sanitizeProgress(edit.progress, DEFAULT_PROGRESS),
+    // Clips from before smooth zoom keep jumping, so a new render looks the same.
+    zoomStyle: oneOf(edit.zoomStyle, ZOOM_STYLES.map((z) => z.id), 'cut'),
+    transition: oneOf(edit.transition, CUT_TRANSITIONS.map((c) => c.id), 'none'),
   };
 }
 
@@ -320,6 +325,8 @@ export function withStyle(edit: ClipEdit, style: BrandStyle, hasLogo: boolean): 
     title: { ...edit.title, enabled: style.title.enabled, duration: style.title.duration },
     logo: { ...style.logo, enabled: style.logo.enabled && hasLogo },
     ...(style.zoom ? { zoom: style.zoom } : {}),
+    ...(style.zoomStyle ? { zoomStyle: style.zoomStyle } : {}),
+    ...(style.transition ? { transition: style.transition } : {}),
     ...(style.progress ? { progress: { ...style.progress } } : {}),
   };
 }
@@ -331,6 +338,8 @@ export function styleOf(edit: ClipEdit): Omit<BrandStyle, 'savedAt'> {
     title: { enabled: edit.title.enabled, duration: edit.title.duration },
     logo: edit.logo,
     zoom: edit.zoom,
+    zoomStyle: edit.zoomStyle,
+    transition: edit.transition,
     progress: edit.progress,
   };
 }
@@ -349,6 +358,8 @@ export function sanitizeStyle(raw: unknown): BrandStyle | null {
     logo: sanitizeLogo(raw.logo, DEFAULT_LOGO),
     ...(raw.zoom !== undefined ? { zoom: oneOf(raw.zoom, ZOOM_LEVELS.map((l) => l.id), 'off') } : {}),
     ...(isObject(raw.progress) ? { progress: sanitizeProgress(raw.progress, DEFAULT_PROGRESS) } : {}),
+    ...(raw.zoomStyle !== undefined ? { zoomStyle: oneOf(raw.zoomStyle, ZOOM_STYLES.map((z) => z.id), 'smooth') } : {}),
+    ...(raw.transition !== undefined ? { transition: oneOf(raw.transition, CUT_TRANSITIONS.map((c) => c.id), 'none') } : {}),
     savedAt: new Date().toISOString(),
   };
 }
@@ -429,5 +440,7 @@ export function sanitizeEdit(
     music: sanitizeMusic(raw.music, fallback.music ?? null),
     broll: sanitizeBroll(raw.broll, fallback.broll ?? [], wordIds),
     progress: sanitizeProgress(raw.progress, fallback.progress ?? DEFAULT_PROGRESS),
+    zoomStyle: oneOf(raw.zoomStyle, ZOOM_STYLES.map((z) => z.id), fallback.zoomStyle ?? 'cut'),
+    transition: oneOf(raw.transition, CUT_TRANSITIONS.map((c) => c.id), fallback.transition ?? 'none'),
   };
 }

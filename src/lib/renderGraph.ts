@@ -1,6 +1,6 @@
 import { cropLeft, fitRect, singleCrop, type OutputSize, type Panel, type ResolvedLayout } from './edit/layout';
 import { EMOJI_POP, EMOJI_RISE } from './edit/emoji';
-import { ZOOM_CENTER } from './edit/zoom';
+import { FLASH, planGlides, ZOOM_CENTER, zoomAmountExpr, type ZoomPlan } from './edit/zoom';
 import type { CropKeyframe, SourceInfo, TimeRange } from './edit/types';
 
 function num(n: number): string {
@@ -75,8 +75,14 @@ export interface RenderGraphInput {
    * from `start` to `end` (clip timeline) at `rect`, popping in.
    */
   emojis?: { input: number; rect: { x: number; y: number; size: number }; start: number; end: number }[];
-  /** Punch-in zooms: the frame shown `factor` closer during `segments` (clip timeline, after the cuts). */
-  zoom?: { factor: number; segments: TimeRange[] };
+  /**
+   * Zooms on the finished clip's timeline: jumps are a scaled copy laid
+   * over the frame, glides go through zoompan at `rate` (the frame rate,
+   * as ffmpeg's -r takes it).
+   */
+  zoom?: { plan: ZoomPlan; rate?: string };
+  /** White flashes at the cuts (finished clip's timeline). */
+  flash?: TimeRange[];
   /** Background music: an audio input looped and cut to the clip's length, and its level. */
   music?: { input: number; volume: number };
   /** Stock video over parts of the clip: each a video input, filling the frame from `start` to `end`. */
@@ -148,18 +154,34 @@ export function buildRenderGraph(input: RenderGraphInput): { graph: string; maps
     ].join('+');
     video += `,select='${inside}',setpts='(T-(${offset}))/TB'`;
   }
-  if (input.zoom && input.zoom.factor > 1 && input.zoom.segments.length > 0) {
-    // A copy of the finished frame, scaled up and cut back to size around
-    // ZOOM_CENTER, laid over the frame while a zoom lasts.
+  const plan = input.zoom?.plan;
+  if (plan && plan.factor > 1 && plan.spans.length > 0) {
     const { w, h } = input.out;
-    const zw = even(w * input.zoom.factor);
-    const zh = even(h * input.zoom.factor);
-    const x = Math.round((zw - w) * ZOOM_CENTER.x);
-    const y = Math.round((zh - h) * ZOOM_CENTER.y);
-    const when = input.zoom.segments.map((s) => `between(t,${num(s.start)},${num(s.end)})`).join('+');
-    video +=
-      `,split=2[wide][close];[close]scale=${zw}:${zh},crop=${w}:${h}:${x}:${y}[closer];` +
-      `[wide][closer]overlay=0:0:enable='${when}'`;
+    if (planGlides(plan)) {
+      // Glides: zoompan with the zoom worked out per frame. It counts
+      // frames, so the frame rate is made steady first.
+      const rate = input.zoom?.rate ?? '30';
+      video +=
+        `,fps=${rate},zoompan=z='1+${num(plan.factor - 1)}*(${zoomAmountExpr(plan)})'` +
+        `:x='(iw-iw/zoom)*${ZOOM_CENTER.x}':y='(ih-ih/zoom)*${ZOOM_CENTER.y}':d=1:s=${w}x${h}:fps=${rate},setsar=1` +
+        // The steady rate pads up to where the source would have ended: stop at the clip's end.
+        `,trim=end=${num(outputLength(input))}`;
+    } else {
+      // Jumps: a copy of the finished frame, scaled up and cut back to size
+      // around ZOOM_CENTER, laid over the frame while a zoom lasts.
+      const zw = even(w * plan.factor);
+      const zh = even(h * plan.factor);
+      const x = Math.round((zw - w) * ZOOM_CENTER.x);
+      const y = Math.round((zh - h) * ZOOM_CENTER.y);
+      const when = plan.spans.map((s) => `between(t,${num(s.start)},${num(s.end)})`).join('+');
+      video +=
+        `,split=2[wide][close];[close]scale=${zw}:${zh},crop=${w}:${h}:${x}:${y}[closer];` +
+        `[wide][closer]overlay=0:0:enable='${when}'`;
+    }
+  }
+  if (input.flash?.length) {
+    const when = input.flash.map((f) => `between(t,${num(f.start)},${num(f.end)})`).join('+');
+    video += `,drawbox=x=0:y=0:w=iw:h=ih:color=white@${num(FLASH.alpha)}:t=fill:enable='${when}'`;
   }
   // The progress bar goes over everything but the captions.
   const finish = (label: string) => topLayers(label, input, outputLength(input), '');
@@ -264,7 +286,8 @@ function topLayers(
     const d = Math.max(0.1, length);
     graph +=
       `;color=c=0x${color.replace('#', '')}:s=${input.out.w}x${rect.h}:r=30:d=${num(d + 1)}[pbar]` +
-      `;[${current}][pbar]overlay=x='-w+W*min(1,t/${num(d)})':y=${rect.y}:eof_action=repeat${overlayOptions}[vp]`;
+      // shortest=1: the strip runs a little past the clip, the clip decides when it ends.
+      `;[${current}][pbar]overlay=x='-w+W*min(1,t/${num(d)})':y=${rect.y}:eof_action=repeat:shortest=1${overlayOptions}[vp]`;
     current = 'vp';
   }
   return `${graph};[${current}]${input.captionsFilter}${captionsOptions}[vout]`;

@@ -27,7 +27,7 @@ import {
 } from '@/lib/edit/layout';
 import { BROLL_DURATION, captionPreset, DEFAULT_MUSIC_VOLUME, LOGO_CORNERS, presetCaptions, styleOf, withStyle } from '@/lib/edit/presets';
 import { CAPTION_LANGUAGES, captionLanguage } from '@/lib/edit/translation';
-import { ZOOM_LEVELS } from '@/lib/edit/zoom';
+import { CUT_TRANSITIONS, ZOOM_LEVELS, ZOOM_STYLES } from '@/lib/edit/zoom';
 import type {
   AspectRatio,
   BrandInfo,
@@ -54,6 +54,8 @@ const CORNER_LABELS: Record<LogoCorner, string> = {
 };
 
 interface SettingsPanelProps {
+  /** How many cuts the clip has (removed words and pauses). */
+  cuts: number;
   edit: ClipEdit;
   set: (edit: ClipEdit, key?: string) => void;
   analysis: FramingAnalysis | null;
@@ -678,10 +680,46 @@ export function SettingsPanel(props: SettingsPanelProps) {
                   </button>
                 ))}
               </div>
+              {edit.zoom !== 'off' && (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {ZOOM_STYLES.map((z) => (
+                    <button
+                      key={z.id}
+                      type="button"
+                      onClick={() => set({ ...edit, zoomStyle: z.id })}
+                      className={`rounded-md border px-2 py-1 text-xs ${edit.zoomStyle === z.id ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
+                    >
+                      {z.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <p className="text-xs text-gray-400">
-                {props.resolved.layout === 'single'
-                  ? 'Bilden går närmare varannan mening och på markerade ord, som när man klipper mellan två kameravinklar.'
-                  : 'Zoomen fungerar bara med layouten Följ talaren.'}
+                {props.resolved.layout !== 'single'
+                  ? 'Zoomen fungerar bara med layouten Följ talaren.'
+                  : edit.zoomStyle === 'smooth'
+                    ? 'Bilden glider närmare varannan mening och på markerade ord.'
+                    : 'Bilden hoppar närmare varannan mening och på markerade ord, som när man klipper mellan två kameravinklar.'}
+              </p>
+            </Section>
+            <Section title="Vid klippen">
+              <div className="grid grid-cols-3 gap-1.5">
+                {CUT_TRANSITIONS.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    title={c.hint}
+                    onClick={() => set({ ...edit, transition: c.id })}
+                    className={`rounded-md border px-2 py-1.5 text-xs ${edit.transition === c.id ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400">
+                {CUT_TRANSITIONS.find((c) => c.id === edit.transition)?.hint}
+                {edit.transition === 'punch' && props.resolved.layout !== 'single' ? ' Fungerar bara med layouten Följ talaren.' : ''}
+                {edit.transition !== 'none' && props.cuts === 0 ? ' Klippet har inga klipp än: ta bort ord eller pauser.' : ''}
               </p>
             </Section>
             <Section title="Förloppsstapel">

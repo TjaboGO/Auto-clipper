@@ -51,6 +51,8 @@ och appen:
 19. Sparar flera mallar med egna namn (text, rubrik, logga, zoom och förloppsstapel), som du väljer
     när du skapar klipp eller använder på ett klipp i redigeraren. Klippen kan få en förloppsstapel
     som fylls på medan de spelas
+20. Zoomar mjukt (glider in och ut) eller med hopp, och kan dölja hoppen där ord och pauser klippts
+    bort: varannan del visas lite närmare, eller en kort vit blixt vid varje klipp
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -291,8 +293,8 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
 - **Redigeraren har inte allt som Opus har.** Det finns inga övergångar eller publicering direkt
   till TikTok. B-roll kommer bara från Pexels och kräver en egen (gratis) nyckel, och
   det finns ingen inbyggd musik: du laddar upp egna låtar. I förhandsvisningen hörs musiken utan
-  sänkningen under tal. Emojierna är ett urval på drygt 100 vanliga, och
-  zoomen hoppar in och ut (ingen mjuk åkning). Delarna i split screen, facecam,
+  sänkningen under tal. Emojierna är ett urval på drygt 100 vanliga. Zoomen glider alltid mot
+  samma punkt (mitten, lite upp), den följer inte ett ansikte åt sidan. Delarna i split screen, facecam,
   skärm och grupp följer automatiskt och kan byta plats och storlek, men inte beskäras för hand.
   Loggan är en stillbild.
 - **Facecam och grupp bygger på ansiktena.** Webbkamera-rutan hittas från raka, fasta kanter, så en

@@ -8,7 +8,7 @@ import { MIN_CLIP_SECONDS } from '@/lib/edit/presets';
 import { CAPTION_FONTS, setCustomFonts } from '@/lib/edit/fonts';
 import { sentencesToTranslate, translatedWords } from '@/lib/edit/translation';
 import { clipEmojiShows, EMOJIS, emojiRect } from '@/lib/edit/emoji';
-import { zoomFactor, zoomSegments } from '@/lib/edit/zoom';
+import { flashWindows, zoomPlan } from '@/lib/edit/zoom';
 import {
   applyReframe,
   clipWords,
@@ -141,13 +141,12 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
     () => clipEmojiShows(edit, spokenWords, pages, duration),
     [edit, spokenWords, pages, duration],
   );
+  // The same zooms and flashes as the render.
   const zoom = useMemo(
-    () =>
-      resolved.layout === 'single' && edit.zoom !== 'off'
-        ? { factor: zoomFactor(edit.zoom), segments: zoomSegments(spokenWords, duration) }
-        : { factor: 1, segments: [] },
-    [resolved.layout, edit.zoom, spokenWords, duration],
+    () => (resolved.layout === 'single' ? zoomPlan(edit, spokenWords, kept, duration) : null),
+    [resolved.layout, edit, spokenWords, kept, duration],
   );
+  const flash = useMemo(() => (edit.transition === 'flash' ? flashWindows(kept) : []), [edit.transition, kept]);
   const musicPreview = useMemo(() => {
     const track = edit.music && brand.music?.find((t) => t.id === edit.music?.track);
     return track && edit.music ? { url: musicUrl(track.id), volume: edit.music.volume, duration: track.duration } : null;
@@ -652,6 +651,7 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             emojis={emojis}
             emojiRect={emojiRect(metrics)}
             zoom={zoom}
+            flash={flash}
             music={musicPreview}
             broll={brollPreview}
           />
@@ -659,6 +659,7 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
 
         <aside className="min-h-0 bg-base-900/60 rounded-xl p-4 order-3 max-h-[70vh] lg:max-h-none flex flex-col">
           <SettingsPanel
+            cuts={Math.max(0, kept.length - 1)}
             edit={edit}
             set={set}
             analysis={data.analysis}

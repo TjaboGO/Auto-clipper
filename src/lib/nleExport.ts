@@ -122,6 +122,7 @@ function plainEdit(edit: ClipEdit, start: number, end: number): ClipEdit {
     logo: { ...edit.logo, enabled: false },
     translation: null,
     zoom: 'off',
+    transition: 'none',
     music: null,
     broll: [],
     progress: { ...edit.progress, enabled: false },
