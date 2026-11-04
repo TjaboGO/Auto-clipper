@@ -627,6 +627,34 @@ ${said.slice(0, 6000)}`;
   return posts;
 }
 
+/** Short hook titles for the top of a clip, from what is said in it. */
+export async function suggestHooks(said: string, current: string): Promise<string[]> {
+  const prompt = `Write 5 different hooks for the top of this short video: the line that makes \
+someone stop scrolling in the first second. Each at most 8 words, in the same language as what is \
+said, no hashtags, no quotes, no emojis. Mix kinds: a bold claim, a question, a number, a surprise, \
+a "you" sentence. Only promise what the video delivers.${current ? ` The current hook is: ${current}` : ''}
+
+What is said in the video:
+${said.slice(0, 4000)}`;
+  const raw = await textJson<unknown>(prompt, { type: Type.ARRAY, items: { type: Type.STRING } }, ThinkingLevel.LOW);
+  return cleanHooks(raw);
+}
+
+/** Hooks: trimmed, without wrapping quotes, no doubles, at most 120 characters. */
+export function cleanHooks(raw: unknown): string[] {
+  const seen = new Set<string>();
+  return (Array.isArray(raw) ? raw : [])
+    .filter((h): h is string => typeof h === 'string')
+    .map((h) => h.replace(/\s+/g, ' ').trim().replace(/^["'“”«»]+|["'“”«»]+$/g, '').trim().slice(0, 120))
+    .filter((h) => {
+      const key = h.toLowerCase();
+      if (!h || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 8);
+}
+
 const translationSchema: Schema = {
   type: Type.ARRAY,
   items: {

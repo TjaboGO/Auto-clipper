@@ -79,6 +79,10 @@ interface SettingsPanelProps {
   onTranslate: (lang: string) => Promise<void>;
   /** Let the AI put emojis on words; returns how many. */
   onSuggestEmojis: () => Promise<number>;
+  /** Hook titles from the AI. */
+  onSuggestHooks: () => Promise<string[]>;
+  /** A cover image from source time `at`; returns its address. */
+  onCover: (at: number, title: boolean) => Promise<string>;
   /** The word at the playhead (where new B-roll starts), or null. */
   anchor: { id: string; text: string } | null;
   /** The transcript words, for naming where B-roll starts. */
@@ -206,11 +210,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const camPossible = !!facecam && splitAllowed(edit.aspect);
   const groupSize = props.analysis?.group?.length ?? 0;
   const { brand, onBrand } = props;
-  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | 'broll' | null>(null);
+  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | 'broll' | 'hooks' | 'cover' | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const setLogo = (patch: Partial<LogoSettings>, key?: string) => set({ ...edit, logo: { ...edit.logo, ...patch } }, key);
 
-  async function run(what: 'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | 'broll', job: () => Promise<string | null>) {
+  async function run(what: 'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | 'broll' | 'hooks' | 'cover', job: () => Promise<string | null>) {
     setBusy(what);
     setMessage(null);
     try {
@@ -248,6 +252,9 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const [lookId, setLookId] = useState<string>('mine');
   const look = looks.find((l) => l.id === lookId) ?? looks[0];
   const [lookName, setLookName] = useState<string | null>(null);
+  const [hooks, setHooks] = useState<string[]>([]);
+  const [cover, setCover] = useState<string | null>(null);
+  const [coverTitle, setCoverTitle] = useState(true);
   const saveLook = (rawName: string) =>
     run('style', async () => {
       const name = rawName.trim() || 'Min stil';
@@ -880,6 +887,64 @@ export function SettingsPanel(props: SettingsPanelProps) {
             <p className="text-xs text-gray-400">
               En kort rubrik i början får fler att stanna kvar. Förslaget kommer från AI:n.
             </p>
+            <Section title="Fler förslag">
+              <button
+                type="button"
+                disabled={busy === 'hooks'}
+                onClick={() =>
+                  run('hooks', async () => {
+                    setHooks(await props.onSuggestHooks());
+                    return null;
+                  })
+                }
+                className="w-full rounded-md bg-base-800 hover:bg-base-700 disabled:opacity-50 px-3 py-1.5 text-sm"
+              >
+                {busy === 'hooks' ? 'AI:n skriver ...' : 'Föreslå rubriker med AI'}
+              </button>
+              {hooks.length > 0 && (
+                <ul className="space-y-1">
+                  {hooks.map((h) => (
+                    <li key={h}>
+                      <button
+                        type="button"
+                        onClick={() => set({ ...edit, title: { ...edit.title, text: h, enabled: true } })}
+                        className={`w-full text-left rounded-md border px-2 py-1.5 text-sm ${edit.title.text === h ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600'}`}
+                      >
+                        {h}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Section>
+            <Section title="Omslagsbild">
+              <p className="text-xs text-gray-400">
+                Spola till en bra bild i klippet och gör ett omslag av den, till exempel för Reels eller som miniatyr.
+              </p>
+              <Toggle label="Med rubriken" checked={coverTitle} onChange={setCoverTitle} />
+              <button
+                type="button"
+                disabled={busy === 'cover'}
+                onClick={() =>
+                  run('cover', async () => {
+                    setCover(await props.onCover(props.time, coverTitle));
+                    return null;
+                  })
+                }
+                className="w-full rounded-md bg-base-800 hover:bg-base-700 disabled:opacity-50 px-3 py-1.5 text-sm"
+              >
+                {busy === 'cover' ? 'Gör omslaget ...' : 'Gör omslag av bilden som visas nu'}
+              </button>
+              {cover && (
+                <div className="space-y-1.5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={cover} alt="Omslagsbild" className="w-full rounded-md bg-black" />
+                  <a href={cover} download="omslag.jpg" className="block text-center text-sm text-accent-300 hover:text-accent-400">
+                    Ladda ner omslaget
+                  </a>
+                </div>
+              )}
+            </Section>
           </>
         )}
 

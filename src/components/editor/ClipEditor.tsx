@@ -347,6 +347,25 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
     set(withOverrides(edit, selectedIds.slice(0, 1), (o) => ({ ...o, emoji })));
     setEmojiPicker(false);
   };
+  const suggestHooks = useCallback(async () => {
+    const res = await fetch(`/api/jobs/${jobId}/clips/${clip.id}/hooks`, { method: 'POST' });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? 'Kunde inte hämta rubriker.');
+    return body.hooks as string[];
+  }, [jobId, clip.id]);
+  const makeCover = useCallback(
+    async (at: number, title: boolean) => {
+      const res = await fetch(`/api/jobs/${jobId}/clips/${clip.id}/cover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ at, title, text: editRef.current.title.text }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? 'Kunde inte göra omslaget.');
+      return body.url as string;
+    },
+    [jobId, clip.id],
+  );
   const suggestEmojis = useCallback(async () => {
     const res = await fetch(`/api/jobs/${jobId}/clips/${clip.id}/emojis`, {
       method: 'POST',
@@ -676,6 +695,8 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             sentences={sentences}
             onTranslate={translate}
             onSuggestEmojis={suggestEmojis}
+            onSuggestHooks={suggestHooks}
+            onCover={makeCover}
             anchor={anchor}
             wordText={wordText}
             onSuggestBroll={suggestBroll}

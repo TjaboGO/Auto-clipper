@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ThinkingLevel } from '@google/genai';
-import { cleanScores, cleanSuggestions, thinking, tidyMoments, type HighlightOptions } from './gemini';
+import { cleanHooks, cleanScores, cleanSuggestions, thinking, tidyMoments, type HighlightOptions } from './gemini';
 import type { ClipSuggestion, TranscriptSegment, VisualMoment } from './types';
 
 // Ten 10-second segments: 100 s of transcript starting at 20 s.
@@ -130,4 +130,13 @@ test('the four sub-scores are whole numbers 0-100, or left out', () => {
   assert.equal(cleanScores({ hook: 80, flow: 70, value: 60 }), undefined);
   assert.equal(cleanScores('high'), undefined);
   assert.equal(cleanScores(null), undefined);
+});
+
+test('hooks are trimmed, unquoted and not repeated', () => {
+  assert.deepEqual(cleanHooks(['  "Så här blir du rik"  ', 'så här blir du rik', '', 42, '«Ingen pratar om det här»', 'x'.repeat(200)]), [
+    'Så här blir du rik',
+    'Ingen pratar om det här',
+    'x'.repeat(120),
+  ]);
+  assert.deepEqual(cleanHooks('nej'), []);
 });
