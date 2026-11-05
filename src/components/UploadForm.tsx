@@ -12,6 +12,7 @@ import { ZOOM_LEVELS } from '@/lib/edit/zoom';
 import { CAPTION_PRESETS, captionPreset } from '@/lib/edit/presets';
 import { captionFont, setCustomFonts } from '@/lib/edit/fonts';
 import type { BrandInfo } from '@/lib/edit/types';
+import { BUILT_IN_LOOKS, builtInLook } from '@/lib/edit/looks';
 import type { AspectRatio } from '@/lib/edit/types';
 import {
   CLIP_LENGTHS,
@@ -79,7 +80,9 @@ export function UploadForm() {
   const router = useRouter();
   const [brand, setBrand] = useState<BrandInfo | null>(null);
   // The fonts of Min stil and your templates too, for their samples.
-  const savedFonts = [brand?.style, ...(brand?.templates ?? [])].flatMap((look) => (look ? [captionFont(look.captions.font)] : []));
+  const savedFonts = [brand?.style, ...(brand?.templates ?? []), ...BUILT_IN_LOOKS.map((l) => l.style)].flatMap((look) =>
+    look ? [captionFont(look.captions.font)] : [],
+  );
   const fontsReady = useCaptionFonts([...PRESET_FONTS, ...savedFonts]);
   const [mode, setMode] = useState<Mode>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -199,7 +202,7 @@ export function UploadForm() {
       ? 'Min stil'
       : isTemplateChoice(options.captionPreset)
         ? (brand?.templates?.find((t) => t.id === options.captionPreset)?.name ?? 'Mall')
-        : captionPreset(options.captionPreset).label,
+        : (builtInLook(options.captionPreset)?.name ?? captionPreset(options.captionPreset).label),
     options.keywords ? 'nyckelord' : null,
     options.fillers ? 'utan utfyllnadsord' : null,
     options.pauses ? 'utan pauser' : null,
@@ -319,7 +322,7 @@ export function UploadForm() {
                 ))}
               </div>
             </Field>
-            <Field label="Textstil">
+            <Field label="Stil">
               <CaptionPresetPicker
                 value={options.captionPreset}
                 onChange={(id) => set({ captionPreset: id })}
@@ -330,6 +333,7 @@ export function UploadForm() {
                   template,
                   onSelect: () => set({ captionPreset: template.id as `t-${string}` }),
                 }))}
+                looks={BUILT_IN_LOOKS.map((look) => ({ look, onSelect: () => set({ captionPreset: look.id }) }))}
               />
             </Field>
             <Field label="AI:n tittar på videon">

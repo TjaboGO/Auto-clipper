@@ -11,6 +11,7 @@ import { ScheduleAll } from '@/components/ScheduleAll';
 import { captionPreset } from '@/lib/edit/presets';
 import { clipLength, formatClock, isTemplateChoice, type JobOptions } from '@/lib/jobOptions';
 import { captionLanguage } from '@/lib/edit/translation';
+import { builtInLook } from '@/lib/edit/looks';
 import type { Chapter, ClipPosts, ClipScores, YoutubeUpload } from '@/lib/types';
 
 interface Clip {
@@ -60,7 +61,11 @@ function optionLabels(options?: JobOptions, watched?: boolean): string[] {
     options.topic ? `Om: ${options.topic}` : '',
     options.clipLength === 'auto' ? '' : clipLength(options.clipLength).hint,
     options.aspect,
-    options.captionPreset === 'mine' ? 'Min stil' : isTemplateChoice(options.captionPreset) ? 'Mall' : captionPreset(options.captionPreset).label,
+    options.captionPreset === 'mine'
+      ? 'Min stil'
+      : isTemplateChoice(options.captionPreset)
+        ? 'Mall'
+        : (builtInLook(options.captionPreset)?.name ?? captionPreset(options.captionPreset).label),
     options.keywords ? 'Nyckelord' : '',
     options.fillers ? 'Utan utfyllnadsord' : '',
     options.pauses ? 'Utan pauser' : '',

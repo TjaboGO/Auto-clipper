@@ -171,6 +171,9 @@ export interface BrandStyle {
   zoomStyle?: ZoomStyle;
   transition?: CutTransition;
   progress?: ProgressBarSettings;
+  /** The pace: cut filler sounds and pauses (missing: the clip keeps its own). */
+  removeFillers?: boolean;
+  removePauses?: boolean;
   savedAt: string;
 }
 
@@ -179,6 +182,18 @@ export interface StyleTemplate extends BrandStyle {
   /** "t-" + random hex. */
   id: string;
   name: string;
+  /** Made from a video you liked: what the AI saw, and what the app can't do (yet). */
+  origin?: StyleOrigin;
+}
+
+export interface StyleOrigin {
+  kind: 'video';
+  /** The video's title or file name. */
+  from: string;
+  /** A few sentences on the style. */
+  summary: string;
+  /** Things to do by hand (B-roll, music) and things the app can't do yet. */
+  notes: string[];
 }
 
 /** The logo image in the brand kit. `version` changes when it's replaced. */

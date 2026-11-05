@@ -2,6 +2,7 @@
 
 import { captionFont, cssFontFamily } from '@/lib/edit/fonts';
 import { CAPTION_PRESETS, captionPreset } from '@/lib/edit/presets';
+import type { BuiltInLook } from '@/lib/edit/looks';
 import type { AspectRatio, BrandStyle, CaptionPresetId, CaptionSettings, StyleTemplate } from '@/lib/edit/types';
 
 /** A small outline in the shape of a format. */
@@ -63,6 +64,8 @@ export function CaptionPresetPicker(props: {
   mine?: { style: BrandStyle; onSelect: () => void } | null;
   /** Your templates, after Min stil. */
   templates?: { template: StyleTemplate; onSelect: () => void }[];
+  /** The app's own looks, after your templates. */
+  looks?: { look: BuiltInLook; onSelect: () => void }[];
 }) {
   const card = (selected: boolean) =>
     `rounded-lg border p-2 text-left ${selected ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600 bg-base-900'}`;
@@ -80,6 +83,13 @@ export function CaptionPresetPicker(props: {
           <StyleSample style={template.captions} fontsReady={props.fontsReady} />
           <span className="block text-xs font-medium mt-1 truncate">{template.name}</span>
           <span className="block text-[11px] text-gray-400 leading-tight">Din mall</span>
+        </button>
+      ))}
+      {(props.looks ?? []).map(({ look, onSelect }) => (
+        <button key={look.id} type="button" onClick={onSelect} aria-pressed={props.value === look.id} className={card(props.value === look.id)}>
+          <StyleSample style={look.style.captions} fontsReady={props.fontsReady} />
+          <span className="block text-xs font-medium mt-1 truncate">{look.name}</span>
+          <span className="block text-[11px] text-gray-400 leading-tight">{look.description}</span>
         </button>
       ))}
       {CAPTION_PRESETS.map((p) => (

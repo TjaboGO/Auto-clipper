@@ -328,6 +328,8 @@ export function withStyle(edit: ClipEdit, style: BrandStyle, hasLogo: boolean): 
     ...(style.zoomStyle ? { zoomStyle: style.zoomStyle } : {}),
     ...(style.transition ? { transition: style.transition } : {}),
     ...(style.progress ? { progress: { ...style.progress } } : {}),
+    ...(typeof style.removeFillers === 'boolean' ? { removeFillers: style.removeFillers } : {}),
+    ...(typeof style.removePauses === 'boolean' ? { removePauses: style.removePauses } : {}),
   };
 }
 
@@ -341,6 +343,8 @@ export function styleOf(edit: ClipEdit): Omit<BrandStyle, 'savedAt'> {
     zoomStyle: edit.zoomStyle,
     transition: edit.transition,
     progress: edit.progress,
+    removeFillers: edit.removeFillers,
+    removePauses: edit.removePauses,
   };
 }
 
@@ -360,6 +364,8 @@ export function sanitizeStyle(raw: unknown): BrandStyle | null {
     ...(isObject(raw.progress) ? { progress: sanitizeProgress(raw.progress, DEFAULT_PROGRESS) } : {}),
     ...(raw.zoomStyle !== undefined ? { zoomStyle: oneOf(raw.zoomStyle, ZOOM_STYLES.map((z) => z.id), 'smooth') } : {}),
     ...(raw.transition !== undefined ? { transition: oneOf(raw.transition, CUT_TRANSITIONS.map((c) => c.id), 'none') } : {}),
+    ...(typeof raw.removeFillers === 'boolean' ? { removeFillers: raw.removeFillers } : {}),
+    ...(typeof raw.removePauses === 'boolean' ? { removePauses: raw.removePauses } : {}),
     savedAt: new Date().toISOString(),
   };
 }

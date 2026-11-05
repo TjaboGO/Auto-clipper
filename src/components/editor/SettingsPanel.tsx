@@ -28,6 +28,7 @@ import {
 import { BROLL_DURATION, captionPreset, DEFAULT_MUSIC_VOLUME, LOGO_CORNERS, presetCaptions, styleOf, withStyle } from '@/lib/edit/presets';
 import { CAPTION_LANGUAGES, captionLanguage } from '@/lib/edit/translation';
 import { CUT_TRANSITIONS, ZOOM_LEVELS, ZOOM_STYLES } from '@/lib/edit/zoom';
+import { BUILT_IN_LOOKS } from '@/lib/edit/looks';
 import type {
   AspectRatio,
   BrandInfo,
@@ -248,10 +249,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
 
   // Saved looks: Min stil and your templates.
   const looks = [
-    ...(brand.style ? [{ id: 'mine', name: 'Min stil', style: brand.style }] : []),
-    ...(brand.templates ?? []).map((t) => ({ id: t.id, name: t.name, style: t as BrandStyle })),
+    ...(brand.style ? [{ id: 'mine', name: 'Min stil', style: brand.style, own: true }] : []),
+    ...(brand.templates ?? []).map((t) => ({ id: t.id, name: t.name, style: t as BrandStyle, own: true })),
+    ...BUILT_IN_LOOKS.map((l) => ({ id: l.id, name: l.name, style: { ...l.style, savedAt: '' } as BrandStyle, own: false })),
   ];
-  const [lookId, setLookId] = useState<string>('mine');
+  const [lookId, setLookId] = useState<string>(brand.style ? 'mine' : (brand.templates?.[0]?.id ?? BUILT_IN_LOOKS[0].id));
   const look = looks.find((l) => l.id === lookId) ?? looks[0];
   const [lookName, setLookName] = useState<string | null>(null);
   const [hooks, setHooks] = useState<string[]>([]);
@@ -379,11 +381,22 @@ export function SettingsPanel(props: SettingsPanelProps) {
               aria-label="Sparad stil"
               className="min-w-0 max-w-[9rem] rounded-md bg-base-800 px-2 py-1 text-xs"
             >
-              {looks.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
+              {looks.some((l) => l.own) && (
+                <optgroup label="Dina">
+                  {looks.filter((l) => l.own).map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="Färdiga stilar">
+                {looks.filter((l) => !l.own).map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </optgroup>
             </select>
             <button
               type="button"
@@ -398,7 +411,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
         {lookName === null ? (
           <button
             type="button"
-            onClick={() => setLookName(look && look.id !== 'mine' ? look.name : 'Min stil')}
+            onClick={() => setLookName(look && look.own && look.id !== 'mine' ? look.name : 'Min stil')}
             disabled={busy === 'style'}
             className="rounded-md px-2.5 py-1 text-xs font-medium bg-base-800 hover:bg-base-700 disabled:opacity-50"
             title="Spara klippets stil som Min stil eller som en mall med eget namn"

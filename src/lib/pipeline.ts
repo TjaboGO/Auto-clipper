@@ -14,11 +14,12 @@ import { dropSource, sourceAvailable, writeClipEdit, writeEditorData, writeRende
 import { buildEditorWords, editWindow, emojiWordIds, keywordWordIds, needsFramingAnalysis } from './editorWords';
 import { DEFAULT_MUSIC_VOLUME, defaultEdit, withStyle } from './edit/presets';
 import { brandInfo, brandStyle, brandTemplate, musicTrack } from './brand';
+import { builtInLook, isLookChoice } from './edit/looks';
 import { clipWords } from './edit/timeline';
 import { captionLanguage, sentencesToTranslate } from './edit/translation';
 import { suggestClipBroll } from './brollSuggest';
 import { pexelsStatus } from './pexels';
-import type { SourceInfo } from './edit/types';
+import type { BrandStyle, SourceInfo } from './edit/types';
 import {
   clipLength,
   defaultJobOptions,
@@ -188,6 +189,12 @@ function appendClip(jobId: string, clip: RenderedClip): void {
 }
 
 /** The number the next clip's files get (clip_7.mp4 after clip_6.mp4 or clip_6_v2.mp4). */
+/** One of the app's own looks as a saved style, or null. */
+function lookStyle(choice: string): BrandStyle | null {
+  const look = isLookChoice(choice) ? builtInLook(choice) : null;
+  return look ? { ...look.style, savedAt: '' } : null;
+}
+
 function nextClipIndex(clips: RenderedClip[]): number {
   return clips.reduce((max, c) => Math.max(max, Number(/^clip_(\d+)/.exec(c.filename)?.[1] ?? 0)), 0) + 1;
 }
@@ -239,7 +246,7 @@ async function renderSuggestions(opts: {
       ? brandStyle()
       : isTemplateChoice(options.captionPreset)
         ? brandTemplate(options.captionPreset)
-        : null;
+        : lookStyle(options.captionPreset);
   const hasLogo = !!brandInfo().logo;
   // Translated captions: sentences already translated are reused by the
   // next clip that has them too. If it fails, the clips get the spoken
@@ -282,14 +289,18 @@ async function renderSuggestions(opts: {
         end,
         title: suggestion.title,
         aspect: options.aspect,
-        captionPreset: options.captionPreset === 'mine' || isTemplateChoice(options.captionPreset) ? undefined : options.captionPreset,
+        captionPreset:
+          options.captionPreset === 'mine' || isTemplateChoice(options.captionPreset) || isLookChoice(options.captionPreset)
+            ? undefined
+            : options.captionPreset,
         zoom: options.zoom,
         // A track that has been deleted since the job started is left out.
         music: options.music && musicTrack(options.music) ? { track: options.music, volume: DEFAULT_MUSIC_VOLUME } : null,
       });
       if (mine) edit = withStyle(edit, mine, hasLogo);
-      edit.removeFillers = options.fillers ?? false;
-      edit.removePauses = options.pauses ?? false;
+      // The upload's own choice, or the style's pace.
+      edit.removeFillers = (options.fillers ?? false) || edit.removeFillers;
+      edit.removePauses = (options.pauses ?? false) || edit.removePauses;
       const spoken = clipWords(data.words, edit);
       if (options.keywords && suggestion.keywords?.length) {
         for (const wordId of keywordWordIds(spoken, suggestion.keywords)) {

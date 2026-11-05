@@ -1,6 +1,7 @@
 // What you can choose when starting a job (and when searching for more
 // clips). Plain TypeScript: the upload form and the server share it.
 import { ASPECT_RATIOS, CAPTION_PRESETS } from './edit/presets';
+import { isLookChoice } from './edit/looks';
 import { CAPTION_LANGUAGES } from './edit/translation';
 import { ZOOM_LEVELS, type ZoomLevel } from './edit/zoom';
 import type { AspectRatio, CaptionPresetId } from './edit/types';
@@ -36,8 +37,11 @@ export function clipLength(id: string): ClipLength {
   return CLIP_LENGTHS.find((l) => l.id === id) ?? CLIP_LENGTHS[0];
 }
 
-/** A caption style, "mine": the style you saved in the editor (Min stil), or one of your templates ("t-..."). */
-export type CaptionStyleChoice = CaptionPresetId | 'mine' | `t-${string}`;
+/**
+ * A caption style, "mine": the style you saved in the editor (Min stil),
+ * one of your templates ("t-...") or one of the app's own looks ("s-...").
+ */
+export type CaptionStyleChoice = CaptionPresetId | 'mine' | `t-${string}` | `s-${string}`;
 
 /** Is this one of your templates? */
 export function isTemplateChoice(choice: string): choice is `t-${string}` {
@@ -125,7 +129,7 @@ export function sanitizeJobOptions(raw: unknown): JobOptions {
     clipLength: pick(raw.clipLength, CLIP_LENGTHS.map((l) => l.id), defaults.clipLength),
     aspect: pick(raw.aspect, ASPECT_RATIOS, defaults.aspect),
     captionPreset:
-      typeof raw.captionPreset === 'string' && isTemplateChoice(raw.captionPreset)
+      typeof raw.captionPreset === 'string' && (isTemplateChoice(raw.captionPreset) || isLookChoice(raw.captionPreset))
         ? raw.captionPreset
         : pick<CaptionStyleChoice>(raw.captionPreset, [...CAPTION_PRESETS.map((p) => p.id), 'mine'], defaults.captionPreset),
     keywords: typeof raw.keywords === 'boolean' ? raw.keywords : defaults.keywords,
