@@ -157,6 +157,24 @@ GROUP_MIN_GAP = 0.1
 GROUP_MIN_SHARE = 0.1
 
 
+# Scene cuts (a camera cut, or an edit in the source): the picture changes
+# all at once. Scored as the mean change in hue, saturation and brightness
+# between two sampled frames - the measure PySceneDetect's content detector
+# uses, which OpenShorts and ClipsAI also reframe per shot with. A cut is a
+# spike against its neighbours, so a fast camera pan (high scores for a
+# while) doesn't count. Our own implementation; see THIRD_PARTY_NOTICES.md.
+SCENE_WIDTH = 160
+SCENE_MIN_SCORE = 27.0
+SCENE_SURE_SCORE = 50.0
+SCENE_SPIKE = 3.0
+SCENE_MIN_SECONDS = 1.0
+
+# Who talks: the most active mouth must lead the next one by this share of
+# their total before the frame counts as theirs (both still, or both moving,
+# says nothing). The idea is from OpenShorts' active speaker check.
+SPEAKER_MARGIN = 0.15
+
+
 def run_ffmpeg_pipe(cmd, chunk):
     """Yield fixed-size chunks from an ffmpeg command's stdout."""
     errlog = tempfile.TemporaryFile()  # a stderr pipe could fill up and stall ffmpeg
@@ -253,6 +271,41 @@ def camera_shift(prev, cur):
     return float(np.median(delta[:, 0])), float(np.median(delta[:, 1]))
 
 
+def scene_frame(frame):
+    """A small HSV copy of a frame, for comparing whole pictures cheaply."""
+    h = max(2, int(round(frame.shape[0] * SCENE_WIDTH / frame.shape[1])))
+    small = cv2.resize(frame, (SCENE_WIDTH, h), interpolation=cv2.INTER_AREA)
+    return cv2.cvtColor(small, cv2.COLOR_BGR2HSV).astype(np.int16)
+
+
+def scene_score(prev, cur):
+    """How much the picture changed: mean change of hue (going round the colour circle), saturation and brightness."""
+    diff = np.abs(cur - prev)
+    hue = np.minimum(diff[:, :, 0], 180 - diff[:, :, 0]) * (255.0 / 90.0)
+    return float((hue.mean() + diff[:, :, 1].mean() + diff[:, :, 2].mean()) / 3.0)
+
+
+def scene_cuts(scores, fps=FPS):
+    """
+    Frame indices where a new shot starts. A cut stands out against the frames
+    around it; a very large change always counts. Shots shorter than
+    SCENE_MIN_SECONDS are joined with the previous one (flashes, fast edits).
+    """
+    cuts = []
+    min_gap = int(round(SCENE_MIN_SECONDS * fps))
+    for i in range(1, len(scores)):
+        score = scores[i]
+        if score is None or score < SCENE_MIN_SCORE:
+            continue
+        around = [v for v in scores[max(1, i - 2):i] + scores[i + 1:i + 3] if v is not None]
+        calm = float(np.mean(around)) if around else 0.0
+        if score >= SCENE_SURE_SCORE or score >= SCENE_SPIKE * max(calm, 1.0):
+            if i < min_gap or (cuts and i - cuts[-1] < min_gap):
+                continue
+            cuts.append(i)
+    return cuts
+
+
 def motion_profile(prev, cur, edges, mask=None):
     """
     How much the picture changed in each column band since the last frame,
@@ -306,10 +359,11 @@ def motion_positions(profiles, crop_share):
     return positions
 
 
-def follow_motion(positions, crop_share):
+def follow_motion(positions, crop_share, cuts=()):
     """
     Keyframes that follow the action calmly: aim at where it is over each
     second, only move when it leaves the middle of the crop, and pan slowly.
+    At a scene cut it jumps to where the action is in the new shot.
     """
     frames = len(positions)
     known = [p for p in positions if p is not None]
@@ -327,10 +381,23 @@ def follow_motion(positions, crop_share):
         aims.extend([target] * FPS)
     aims = aims[:frames]
 
+    # A new shot: aim at where the action is right after the cut.
+    for c in sorted(cuts):
+        after = [p for p in positions[c:c + FPS] if p is not None]
+        if after:
+            target = float(np.median(after))
+            end = next((k for k in sorted(cuts) if k > c), frames)
+            for k in range(c, end):
+                aims[k] = target if k < c + FPS or abs(aims[k] - target) <= MOTION_DEAD_ZONE * crop_share else aims[k]
+
     keyframes = []
     current = aims[0]
     keyframes.append({'t': 0.0, 'cx': current, 'cut': True})
     for i in range(1, frames):
+        if i in cuts:
+            current = aims[i]
+            keyframes.append({'t': round(i / FPS, 2), 'cx': current, 'cut': True})
+            continue
         # Calm most of the time, quicker when the action is about to leave the crop.
         gap = aims[i] - current
         alpha = MOTION_PAN_ALPHA * (1 + 3 * min(1.0, abs(gap) / crop_share))
@@ -698,8 +765,8 @@ def smooth(values):
     return out
 
 
-def choose_speakers(boxes, talk, speech, areas):
-    """Viterbi over tracks: who to show in each frame."""
+def choose_speakers(boxes, talk, speech, areas, cuts=()):
+    """Viterbi over tracks: who to show in each frame. Switching is free at a scene cut."""
     frames = len(speech)
     k = len(boxes)
     biggest = max(areas) or 1.0
@@ -717,7 +784,9 @@ def choose_speakers(boxes, talk, speech, areas):
                 continue
             # Small, steady preference for bigger faces when nothing else decides.
             c = 0.02 * (1 - areas[t] / biggest)
-            if speech[i] and max(scores) >= MIN_TALK:
+            ranked = sorted(scores, reverse=True)
+            clear = total > 0 and (len(ranked) < 2 or (ranked[0] - ranked[1]) / total >= SPEAKER_MARGIN)
+            if speech[i] and max(scores) >= MIN_TALK and clear:
                 c += max(scores) / total - scores[t] / total
             cost[i, t] = c
     best = np.zeros((frames, k))
@@ -727,7 +796,7 @@ def choose_speakers(boxes, talk, speech, areas):
         prev_min = int(np.argmin(best[i - 1]))
         for t in range(k):
             stay = best[i - 1, t]
-            switch = best[i - 1, prev_min] + SWITCH_COST
+            switch = best[i - 1, prev_min] + (0.0 if i in cuts else SWITCH_COST)
             if stay <= switch:
                 best[i, t], back[i, t] = stay + cost[i, t], t
             else:
@@ -774,7 +843,7 @@ def simplify(keyframes):
     return [{'t': float(kf['t']), 'cx': round(float(kf['cx']), 4), 'cut': kf['cut']} for kf in kept]
 
 
-def split_half(boxes, det_w, det_h):
+def split_half(boxes, det_w, det_h, cuts=()):
     """Crop for one person in a split screen: pan with them, fixed zoom/height."""
     present = [b for b in boxes if b is not None]
     face_h = float(np.median([b[3] for b in present])) / det_h
@@ -782,7 +851,7 @@ def split_half(boxes, det_w, det_h):
     h = min(1.0, max(SPLIT_MIN_CROP, face_h / SPLIT_FACE_HEIGHT))
     y = min(1.0 - h, max(0.0, face_cy - 0.45 * h))
     positions = [b[0] / det_w if b is not None else None for b in boxes]
-    return {'keyframes': follow(positions), 'y': round(y, 4), 'h': round(h, 4)}
+    return {'keyframes': follow(positions, cuts), 'y': round(y, 4), 'h': round(h, 4)}
 
 
 def main() -> int:
@@ -805,9 +874,14 @@ def main() -> int:
     samples = []
     sample_every = max(1, int(round((args.end - args.start) * FPS / CAM_SAMPLES)))
     prev = None
+    scene_scores = []
+    prev_scene = None
     try:
         for frame in read_frames(args, det_w, det_h):
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            small = scene_frame(frame)
+            scene_scores.append(None if prev_scene is None else scene_score(prev_scene, small))
+            prev_scene = small
             if len(detections) % sample_every == 0:
                 samples.append(gray)
             detections.append([
@@ -822,6 +896,7 @@ def main() -> int:
     if frames == 0:
         print(json.dumps({'error': 'ffmpeg returned no frames'}), file=sys.stderr)
         return 1
+    cuts = set(scene_cuts(scene_scores))
 
     tracks = merge_fragments(link_tracks(detections), det_w)
     tracks = [t for t in tracks if len(t['frames']) >= MIN_TRACK_FRAMES]
@@ -844,7 +919,7 @@ def main() -> int:
                 'w': round((cam[2] - cam[0]) / det_w, 4), 'h': round((cam[3] - cam[1]) / det_h, 4),
             },
             'found': found,
-            'face': follow([b[0] / det_w if b is not None else None for b in boxes[person]]),
+            'face': follow([b[0] / det_w if b is not None else None for b in boxes[person]], cuts),
             'faceY': round(face[1] / det_h, 4),
         }
 
@@ -871,7 +946,7 @@ def main() -> int:
         # The gameplay under the webcam in a 9:16 frame: its crop follows the action.
         share = cam_share(cam, det_w, det_h, args.width, args.height)
         content_share = min(1.0, max(0.1, (args.height * 1080 / (1920 * (1 - share))) / args.width))
-        facecam['content'] = follow_motion(motion_positions(motion, content_share), content_share)[0]
+        facecam['content'] = follow_motion(motion_positions(motion, content_share), content_share, cuts)[0]
         facecam['kind'] = 'game' if action_share(motion) >= GAME_MOTION_SHARE else 'screen'
     elif facecam:
         facecam['content'] = [{'t': 0.0, 'cx': 0.5, 'cut': True}]
@@ -886,12 +961,12 @@ def main() -> int:
             cam_layout = 'screen'
 
     if not tracks or tiny:
-        keyframes, moving = follow_motion(motion_positions(motion, crop_share), crop_share)
+        keyframes, moving = follow_motion(motion_positions(motion, crop_share), crop_share, cuts)
         if moving or not tracks:
             print(json.dumps({
                 'layout': cam_layout or 'single', 'keyframes': keyframes, 'split': None,
                 'facecam': facecam, 'group': None,
-                'stats': {'tracks': len(tracks), 'mode': 'motion' if moving else 'center',
+                'stats': {'tracks': len(tracks), 'mode': 'motion' if moving else 'center', 'scenes': len(cuts) + 1,
                           'action': round(action_share(motion), 2)},
             }))
             return 0
@@ -911,7 +986,7 @@ def main() -> int:
         rest = float(np.percentile(known, 30)) if known else 0.0
         talk.append(smooth([None if m is None else m / (rest + 1.0) for m in movement]))
 
-    path = choose_speakers(boxes, talk, speech, areas)
+    path = choose_speakers(boxes, talk, speech, areas, cuts)
     switches = [i for i in range(1, frames) if path[i] != path[i - 1]]
     speech_frames = [i for i in range(frames) if speech[i]]
     shares = [
@@ -924,6 +999,7 @@ def main() -> int:
         'presence': [round(p, 2) for p in presence],
         'detector': 'yunet' if detector.yunet is not None else 'haar',
         'mode': 'faces',
+        'scenes': len(cuts) + 1,
     }
     if motion is not None:
         stats['action'] = round(action_share(motion), 2)
@@ -946,8 +1022,8 @@ def main() -> int:
         if min(presence[a], presence[b]) >= SPLIT_OPTION_PRESENCE and apart >= 0.2 * det_w:
             left, right = sorted((a, b), key=lambda t: median_x[t])
             split = {
-                'top': split_half(boxes[left], det_w, det_h),
-                'bottom': split_half(boxes[right], det_w, det_h),
+                'top': split_half(boxes[left], det_w, det_h, cuts),
+                'bottom': split_half(boxes[right], det_w, det_h, cuts),
             }
             if (
                 layout == 'single'
@@ -968,7 +1044,7 @@ def main() -> int:
             for t in regulars:
                 present = [b for b in boxes[t] if b is not None]
                 group.append({
-                    'keyframes': follow([b[0] / det_w if b is not None else None for b in boxes[t]]),
+                    'keyframes': follow([b[0] / det_w if b is not None else None for b in boxes[t]], cuts),
                     'faceY': round(float(np.median([b[1] for b in present])) / det_h, 4),
                     'faceH': round(float(np.median([b[3] for b in present])) / det_h, 4),
                 })
@@ -986,7 +1062,7 @@ def main() -> int:
     ]
     print(json.dumps({
         'layout': layout,
-        'keyframes': follow(positions, set(switches)),
+        'keyframes': follow(positions, set(switches) | cuts),
         'split': split,
         'facecam': facecam,
         'group': group,

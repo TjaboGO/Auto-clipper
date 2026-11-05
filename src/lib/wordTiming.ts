@@ -386,6 +386,52 @@ function layOverSpans(run: TimedWord[], found: Span[], edges?: Span): Span[] {
   });
 }
 
+/**
+ * Estimated word times that follow the audio, for when Whisper can't run:
+ * each sentence's words are laid over the stretches where someone actually
+ * speaks, so pauses stay pauses and no word starts in silence. The idea
+ * comes from stable-ts (pulling timestamps out of silence) and auto-editor
+ * (telling speech from silence by loudness); this is our own version on the
+ * loudness we already measure. See THIRD_PARTY_NOTICES.md.
+ */
+export function fitToSpeech(words: TimedWord[], loudness: Loudness): TimedWord[] {
+  const out = words.map((w) => ({ ...w }));
+  // Barely any sound at all (an absolute floor, like auto-editor's threshold): nothing to follow.
+  const sorted = Float32Array.from(loudness.values).sort();
+  if ((sorted[Math.floor(sorted.length * 0.9)] ?? 0) < FIT_MIN_LOUDNESS) return out;
+  const bySeg = new Map<number, number[]>();
+  out.forEach((w, i) => bySeg.set(w.seg, [...(bySeg.get(w.seg) ?? []), i]));
+  const segs = [...bySeg.keys()].sort((a, b) => a - b);
+  segs.forEach((seg, k) => {
+    const idx = bySeg.get(seg) as number[];
+    const first = out[idx[0]];
+    const last = out[idx[idx.length - 1]];
+    // A little slack around the sentence, but never into the next or previous one.
+    const prevEnd = k > 0 ? out[(bySeg.get(segs[k - 1]) as number[]).slice(-1)[0]].end : -Infinity;
+    const nextStart = k < segs.length - 1 ? out[(bySeg.get(segs[k + 1]) as number[])[0]].start : Infinity;
+    const from = Math.max(first.start - FIT_SLACK, prevEnd, loudness.offset);
+    const to = Math.min(last.end + FIT_SLACK, nextStart, loudness.offset + loudness.values.length / loudness.rate);
+    if (to - from < 0.2) return;
+    const spans = speechSpans(loudness, from, to);
+    const speech = spans.reduce((sum, span) => sum + span.end - span.start, 0);
+    // Too little speech found to trust (music, noise, a whisper): keep the even split.
+    if (spans.length === 0 || speech < FIT_MIN_SPEECH * (last.end - first.start)) return;
+    const laid = layOverSpans(idx.map((i) => out[i]), spans);
+    idx.forEach((i, j) => {
+      out[i].start = laid[j].start;
+      out[i].end = Math.max(laid[j].end, laid[j].start + 0.05);
+    });
+  });
+  return out;
+}
+
+/** Slack around a sentence when fitting its words to speech, seconds. */
+const FIT_SLACK = 0.3;
+/** Fit only when at least this share of the sentence's time is speech. */
+const FIT_MIN_SPEECH = 0.3;
+/** RMS (16-bit samples) the loud parts must reach to be speech at all: about -50 dBFS. */
+const FIT_MIN_LOUDNESS = 100;
+
 /** The speaker's pace in seconds per unit of word weight, from sure matches. */
 function speakingPace(
   words: TimedWord[],
@@ -627,6 +673,25 @@ async function listenToClips(
   });
 }
 
+/** The loudness of one clip's audio (plus a little around it), without Whisper. */
+async function clipLoudness(
+  sourcePath: string,
+  durationSec: number,
+  clip: ClipRange,
+  workDir: string,
+  index: number,
+): Promise<Loudness | undefined> {
+  const from = Math.max(0, clip.start - AUDIO_PAD);
+  const to = Math.min(durationSec, clip.end + AUDIO_PAD);
+  const audio = path.join(workDir, `loudness_${index + 1}.wav`);
+  try {
+    await extractAudio(sourcePath, audio, { start: from, duration: to - from });
+    return readLoudness(audio, from);
+  } finally {
+    fs.rmSync(audio, { force: true });
+  }
+}
+
 /** Pull the script's own error message out of a failed run, if there is one. */
 function describeFailure(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
@@ -700,15 +765,25 @@ export async function computeWordTimings(opts: {
   }));
   // Clips without any words (nobody talks) have nothing to time.
   const withWords = clips.map((_, i) => i).filter((i) => estimated[i].words.length > 0);
-  if (!config.wordTiming || withWords.length === 0) return { clips: estimated, listened: 0 };
+  // Without Whisper the estimate still follows the audio, where it can be read.
+  const fitted = async (): Promise<ClipTiming[]> => {
+    const out = [...estimated];
+    for (const i of withWords) {
+      const loudness = await clipLoudness(sourcePath, durationSec, clips[i], workDir, i).catch(() => undefined);
+      if (loudness) out[i] = { ...estimated[i], words: fitToSpeech(estimated[i].words, loudness) };
+    }
+    return out;
+  };
+  if (withWords.length === 0) return { clips: estimated, listened: 0 };
+  if (!config.wordTiming) return { clips: await fitted(), listened: 0 };
 
   opts.onListen?.();
   let heardPerClip: HeardClip[];
   try {
     heardPerClip = await listenToClips(sourcePath, durationSec, withWords.map((i) => clips[i]), workDir);
   } catch (err) {
-    console.warn('[wordTiming] Whisper failed, using estimated timing:', err);
-    return { clips: estimated, listened: withWords.length, problem: describeFailure(err) };
+    console.warn('[wordTiming] Whisper failed, using estimated timing that follows the audio:', err);
+    return { clips: await fitted(), listened: withWords.length, problem: describeFailure(err) };
   }
 
   return {
@@ -716,12 +791,13 @@ export async function computeWordTimings(opts: {
       const listened = withWords.indexOf(i);
       if (listened < 0) return estimated[i];
       const { words: heard, loudness } = heardPerClip[listened];
-      if (!heard || heard.length === 0) return estimated[i];
+      const fallback = loudness ? { ...estimated[i], words: fitToSpeech(estimated[i].words, loudness) } : estimated[i];
+      if (!heard || heard.length === 0) return fallback;
       // Only whole segments: the clip keeps its sentences intact.
       const members = clipSegments(transcript, clip);
       const words = estimated[i].words.filter((w) => members.has(w.seg));
       const aligned = alignWords(words, heard, loudness);
-      if (!aligned) return estimated[i];
+      if (!aligned) return fallback;
       const edges = snapClipToWords(clip, aligned, heard, durationSec, screenEdges(clip, opts.visual ?? []));
       return { ...edges, words: aligned, exact: true };
     }),

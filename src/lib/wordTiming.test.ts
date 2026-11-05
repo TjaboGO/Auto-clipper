@@ -7,6 +7,7 @@ import {
   alignWords,
   clipSegments,
   estimateWordTimings,
+  fitToSpeech,
   readLoudness,
   snapClipToWords,
   type HeardWord,
@@ -328,4 +329,37 @@ test('clip edges stay put if they would jump suspiciously far', () => {
     { text: 'slut', start: 19.6, end: 20.0, seg: 0 },
   ];
   assert.deepEqual(snapClipToWords({ start: 10, end: 20 }, words, words, 60), { start: 10, end: 20 });
+});
+
+test('without Whisper, estimated words are laid over the speech in the audio, not the silence', () => {
+  // 100 values a second: speech 0-1 s, silence 1-2 s, speech 2-3 s, silence after.
+  const values = new Float32Array(400).map((_, f) => ((f < 100 || (f >= 200 && f < 300)) ? 3000 + (f % 7) * 50 : 20));
+  const loudness = { offset: 10, rate: 100, values };
+  // Gemini's sentence covers 10-13 s; the even split puts words in the pause.
+  const even = [
+    { text: 'okej', start: 10, end: 10.6, seg: 0 },
+    { text: 'så', start: 10.6, end: 11.2, seg: 0 },
+    { text: 'här', start: 11.2, end: 11.8, seg: 0 },
+    { text: 'är', start: 11.8, end: 12.4, seg: 0 },
+    { text: 'det', start: 12.4, end: 13, seg: 0 },
+  ];
+  assert.ok(even.some((w) => w.start > 11.05 && w.start < 11.95), 'the even split starts a word in the silence');
+  const fitted = fitToSpeech(even, loudness);
+  for (const w of fitted) {
+    assert.ok(!(w.start > 11.05 && w.start < 11.95), `${w.text} starts in the silence at ${w.start}`);
+    assert.ok(w.end > w.start);
+  }
+  assert.ok(fitted[0].start >= 10 && fitted[fitted.length - 1].end <= 13.1);
+  // In order, and the text is untouched.
+  assert.deepEqual(fitted.map((w) => w.text), even.map((w) => w.text));
+  for (let i = 1; i < fitted.length; i++) assert.ok(fitted[i].start >= fitted[i - 1].start);
+});
+
+test('with too little speech in the audio, the even split is kept', () => {
+  const quiet = { offset: 0, rate: 100, values: new Float32Array(300).fill(10) };
+  const words = [
+    { text: 'a', start: 0.5, end: 1, seg: 0 },
+    { text: 'b', start: 1, end: 1.5, seg: 0 },
+  ];
+  assert.deepEqual(fitToSpeech(words, quiet), words);
 });

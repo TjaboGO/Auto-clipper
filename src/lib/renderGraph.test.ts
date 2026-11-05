@@ -201,7 +201,7 @@ test('the graphics layer for the project export keeps everything see-through', (
 test('a gliding zoom goes through zoompan at a steady frame rate, a jump stays an overlay', () => {
   const glide = { factor: 1.2, spans: [{ start: 1, end: 3, ramp: 0.25 }] };
   const { graph } = buildRenderGraph(input({ zoom: { plan: glide, rate: '30000/1001' } }));
-  assert.match(graph, /,fps=30000\/1001,zoompan=z='1\+0\.2\*\(min\(1,clip\(\(it-1\)\/0\.25,0,1\)\*clip\(\(3-it\)\/0\.25,0,1\)\)/);
+  assert.match(graph, /,fps=30000\/1001,zoompan=z='1\+0\.2\*\(clip\(\(it-1\)\/0\.25,0,1\)\*clip\(\(it-1\)\/0\.25,0,1\)\*\(3-2\*clip/);
   assert.match(graph, /:x='\(iw-iw\/zoom\)\*0\.5':y='\(ih-ih\/zoom\)\*0\.4':d=1:s=1080x1920:fps=30000\/1001,setsar=1,trim=end=5/);
   const jump = buildRenderGraph(input({ zoom: { plan: { factor: 1.2, spans: [{ start: 1, end: 3, ramp: 0 }] } } })).graph;
   assert.match(jump, /\[wide\]\[closer\]overlay=0:0:enable='between\(t,1,3\)'/);

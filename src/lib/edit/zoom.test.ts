@@ -53,11 +53,13 @@ test('a smooth zoom glides in and out, a jump does not', () => {
   const smooth = zoomPlan({ zoom: 'medium', zoomStyle: 'smooth', transition: 'none' }, words, [{ start: 0, end: 6 }], 6);
   assert.ok(smooth);
   assert.equal(smooth.factor, 1.18);
-  assert.deepEqual(smooth.spans, [{ start: 0.95, end: 3.1, ramp: 0.25 }]);
+  assert.deepEqual(smooth.spans, [{ start: 0.95, end: 3.1, ramp: 0.25, fall: 0.55 }]);
   assert.equal(zoomAmount(smooth, 0.9), 0);
   assert.ok(zoomAmount(smooth, 1.05) > 0 && zoomAmount(smooth, 1.05) < 0.5);
   assert.equal(zoomAmount(smooth, 2), 1);
-  assert.ok(zoomAmount(smooth, 3.0) < 0.5);
+  // Quick in, slower out: a quarter second in it's halfway out, not gone.
+  assert.ok(zoomAmount(smooth, 3.1 - 0.275) > 0.4 && zoomAmount(smooth, 3.1 - 0.275) < 0.6);
+  assert.ok(zoomAmount(smooth, 3.05) < 0.1);
   const jump = zoomPlan({ zoom: 'medium', zoomStyle: 'cut', transition: 'none' }, words, [{ start: 0, end: 6 }], 6);
   assert.equal(zoomAmount(jump, 0.96), 1);
   // Nothing to zoom: no plan.
@@ -76,19 +78,20 @@ test('"Zooma varannan" zooms every second part, with or without the automatic zo
 });
 
 test('the render expression matches the preview', () => {
-  const plan = { factor: 1.2, spans: [{ start: 1, end: 3, ramp: 0.25 }, { start: 4, end: 5, ramp: 0 }] };
+  const plan = { factor: 1.2, spans: [{ start: 1, end: 3, ramp: 0.25, fall: 0.55 }, { start: 2.5, end: 5, ramp: 0 }] };
   const expr = zoomAmountExpr(plan, 'T');
   assert.equal(
     expr,
-    'min(1,clip((T-1)/0.25,0,1)*clip((3-T)/0.25,0,1)+between(T,4,5))*min(1,clip((T-1)/0.25,0,1)*clip((3-T)/0.25,0,1)+between(T,4,5))*(3-2*min(1,clip((T-1)/0.25,0,1)*clip((3-T)/0.25,0,1)+between(T,4,5)))',
+    'max(clip((T-1)/0.25,0,1)*clip((T-1)/0.25,0,1)*(3-2*clip((T-1)/0.25,0,1))*clip((3-T)/0.55,0,1)*clip((3-T)/0.55,0,1)*(3-2*clip((3-T)/0.55,0,1)),between(T,2.5,5))',
   );
-  // Evaluate it the way ffmpeg would, and compare with the preview.
+  // Evaluate it the way ffmpeg would, and compare with the preview (overlaps take the strongest).
   const evalAt = (T: number) =>
-    Function('T', 'clip', 'between', 'min', `return ${expr};`)(
+    Function('T', 'clip', 'between', 'max', `return ${expr};`)(
       T,
       (v: number, a: number, b: number) => Math.min(b, Math.max(a, v)),
       (v: number, a: number, b: number) => (v >= a && v <= b ? 1 : 0),
-      Math.min,
+      Math.max,
     ) as number;
-  for (const t of [0.5, 1.1, 1.2, 2, 2.9, 3.5, 4.5]) assert.ok(Math.abs(evalAt(t) - zoomAmount(plan, t)) < 1e-9, `t=${t}`);
+  for (const t of [0.5, 1.1, 1.2, 2, 2.6, 2.9, 3.5, 4.5]) assert.ok(Math.abs(evalAt(t) - zoomAmount(plan, t)) < 1e-9, `t=${t}`);
+  assert.equal(zoomAmount(plan, 2.7), 1);
 });

@@ -91,16 +91,22 @@ export const CUT_TRANSITIONS: { id: CutTransition; label: string; hint: string }
   { id: 'flash', label: 'Blixt', hint: 'En kort vit blixt vid varje klipp.' },
 ];
 
-/** Seconds a smooth zoom takes to glide in (and out). */
+/**
+ * A smooth zoom snaps in, holds and drifts out: quick in, slower out, the
+ * way a camera operator pushes in (the shape OpenShorts' punch-in uses).
+ */
 export const ZOOM_RAMP = 0.25;
+export const ZOOM_FALL = 0.55;
 /** How close "Zooma varannan" goes when the clip has no zoom of its own. */
 export const PUNCH_FACTOR = 1.12;
 /** The flash at a cut: from a little before to a little after, at this strength. */
 export const FLASH = { before: 0.03, after: 0.09, alpha: 0.45 };
 
-/** A stretch of the finished clip that's zoomed in, and how long it glides (0 = jump). */
+/** A stretch of the finished clip that's zoomed in, and how long it glides in (0 = jump) and out. */
 export interface ZoomSpan extends TimeRange {
   ramp: number;
+  /** Seconds to glide out (the same as `ramp` if not set). */
+  fall?: number;
 }
 
 export interface ZoomPlan {
@@ -149,42 +155,47 @@ export function zoomPlan(
 ): ZoomPlan | null {
   const spans: ZoomSpan[] = [];
   if (edit.zoom !== 'off') {
-    const ramp = edit.zoomStyle === 'smooth' ? ZOOM_RAMP : 0;
-    spans.push(...zoomSegments(spoken, clipLength).map((r) => ({ ...r, ramp })));
+    const smooth = edit.zoomStyle === 'smooth';
+    spans.push(...zoomSegments(spoken, clipLength).map((r) => ({ ...r, ramp: smooth ? ZOOM_RAMP : 0, fall: smooth ? ZOOM_FALL : 0 })));
   }
   if (edit.transition === 'punch') spans.push(...punchSpans(kept));
   if (spans.length === 0) return null;
   return { factor: edit.zoom !== 'off' ? zoomFactor(edit.zoom) : PUNCH_FACTOR, spans: spans.sort((a, b) => a.start - b.start) };
 }
 
-/** How far in one span is at `t`, 0-1 before easing (a span shorter than two ramps never gets all the way). */
+const ease = (x: number) => x * x * (3 - 2 * x);
+
+/** How far in one span is at `t`, 0-1 (eased in and out; a span shorter than its glides never gets all the way). */
 function spanAmount(span: ZoomSpan, t: number): number {
   if (span.ramp <= 0) return t >= span.start && t < span.end ? 1 : 0;
+  const fall = span.fall ?? span.ramp;
   const rise = Math.min(1, Math.max(0, (t - span.start) / span.ramp));
-  const fall = Math.min(1, Math.max(0, (span.end - t) / span.ramp));
-  return rise * fall;
+  const out = fall > 0 ? Math.min(1, Math.max(0, (span.end - t) / fall)) : t < span.end ? 1 : 0;
+  return ease(rise) * ease(out);
 }
 
-/** How zoomed in the clip is at `t`, 0-1, eased: the same sum as the render's expression. */
+/** How zoomed in the clip is at `t`, 0-1: the strongest zoom there (overlaps don't add up). */
 export function zoomAmount(plan: ZoomPlan | null, t: number): number {
   if (!plan) return 0;
-  const u = Math.min(1, plan.spans.reduce((sum, s) => sum + spanAmount(s, t), 0));
-  return u * u * (3 - 2 * u);
+  return plan.spans.reduce((most, s) => Math.max(most, spanAmount(s, t)), 0);
 }
 
 function n(value: number): string {
   return String(Math.round(value * 1000) / 1000);
 }
 
-/** The ffmpeg expression for how zoomed in the clip is (0-1, eased), in the time variable `t`. */
+/** The ffmpeg expression for how zoomed in the clip is (0-1), in the time variable `t`: the same as zoomAmount. */
 export function zoomAmountExpr(plan: ZoomPlan, t = 'it'): string {
-  const terms = plan.spans.map((s) =>
-    s.ramp <= 0
-      ? `between(${t},${n(s.start)},${n(s.end)})`
-      : `clip((${t}-${n(s.start)})/${n(s.ramp)},0,1)*clip((${n(s.end)}-${t})/${n(s.ramp)},0,1)`,
-  );
-  const u = `min(1,${terms.join('+')})`;
-  return `${u}*${u}*(3-2*${u})`;
+  const eased = (x: string) => `${x}*${x}*(3-2*${x})`;
+  const terms = plan.spans.map((s) => {
+    if (s.ramp <= 0) return `between(${t},${n(s.start)},${n(s.end)})`;
+    const fall = s.fall ?? s.ramp;
+    const rise = `clip((${t}-${n(s.start)})/${n(s.ramp)},0,1)`;
+    const out = fall > 0 ? `clip((${n(s.end)}-${t})/${n(fall)},0,1)` : `lt(${t},${n(s.end)})`;
+    return `${eased(rise)}*${eased(out)}`;
+  });
+  // max(a,max(b,c)): the strongest zoom wins.
+  return terms.reduceRight((acc, term) => (acc ? `max(${term},${acc})` : term), '');
 }
 
 /** Whether any of the plan glides (else the render can use the cheaper jump). */
