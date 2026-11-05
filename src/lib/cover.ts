@@ -12,6 +12,49 @@ import { jobOutputDir } from './paths';
 import { renderClipEdit } from './render';
 import type { ClipEdit } from './edit/types';
 
+export interface CoverMoment {
+  /** Source seconds. */
+  t: number;
+  /** A small picture of that moment (the whole source frame). */
+  url: string;
+  face: boolean;
+}
+
+/**
+ * The best moments of the clip for a cover: a big, sharp, well lit face,
+ * spread over the clip (scripts/best_frames.py). Each gets a small preview.
+ */
+export async function suggestCoverMoments(jobId: string, clipId: string, count = 4): Promise<CoverMoment[]> {
+  const job = jobStore.get(jobId);
+  const clip = job?.clips?.find((c) => c.id === clipId);
+  const edit = readClipEdit(jobId, clipId);
+  if (!job?.sourceVideoPath || !clip || !edit || !fs.existsSync(job.sourceVideoPath)) {
+    throw new Error('Källvideon behövs för att hitta bilder, och den finns inte kvar.');
+  }
+  const { stdout } = await run(
+    'python3',
+    [config.bestFramesScript, job.sourceVideoPath, '--start', String(edit.start), '--end', String(edit.end), '--model', config.faceModel, '--count', String(count)],
+    {},
+    5 * 60 * 1000,
+  );
+  const parsed = JSON.parse(stdout.trim().split('\n').pop() || '{}') as { frames?: { t: number; face: boolean }[] };
+  const base = clip.filename.replace(/(_v\d+)?\.mp4$/, '');
+  const outDir = jobOutputDir(jobId);
+  const moments: CoverMoment[] = [];
+  for (const [i, frame] of (parsed.frames ?? []).entries()) {
+    if (!Number.isFinite(frame.t)) continue;
+    const name = `${base}_moment_${i + 1}.jpg`;
+    // Seek close by quickly, then exactly: the right frame, also in a long video.
+    const before = Math.max(0, frame.t - 2);
+    await run('ffmpeg', [
+      '-y', '-ss', String(before), '-i', job.sourceVideoPath, '-ss', String(frame.t - before),
+      '-frames:v', '1', '-vf', 'scale=480:-2', '-q:v', '4', path.join(/* turbopackIgnore: true */ outDir, name),
+    ]);
+    moments.push({ t: frame.t, url: `/api/clips/${jobId}/${name}?v=${Date.now()}`, face: !!frame.face });
+  }
+  return moments;
+}
+
 /** How much of the clip is rendered to take the picture from. */
 const SLIVER = 0.5;
 

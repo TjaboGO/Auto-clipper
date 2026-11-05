@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { makeCover } from '@/lib/cover';
+import { makeCover, suggestCoverMoments } from '@/lib/cover';
 import { jobStore } from '@/lib/jobStore';
 import { isSafeSegment } from '@/lib/paths';
 
@@ -22,6 +22,19 @@ export async function POST(req: NextRequest, { params }: Params) {
       text: typeof body?.text === 'string' ? body.text : undefined,
     });
     return NextResponse.json({ url: `/api/clips/${id}/${file}?v=${Date.now()}`, file });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 409 });
+  }
+}
+
+/** The best moments of the clip for a cover (a big, sharp face), with small previews. */
+export async function GET(_req: NextRequest, { params }: Params) {
+  const { id, clipId } = await params;
+  if (!isSafeSegment(id) || !isSafeSegment(clipId) || !jobStore.get(id)?.clips?.some((c) => c.id === clipId)) {
+    return NextResponse.json({ error: 'Klippet finns inte.' }, { status: 404 });
+  }
+  try {
+    return NextResponse.json({ moments: await suggestCoverMoments(id, clipId) });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 409 });
   }

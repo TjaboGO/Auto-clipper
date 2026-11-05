@@ -60,6 +60,10 @@ och appen:
     jämna mellanrum, bästa klippet först
 23. Föreslår fler rubriker (krokar) med AI i redigeraren, och gör en omslagsbild av valfri bild i
     klippet, med eller utan rubriken
+24. Lånar beprövade metoder från open source-projekt (se `THIRD_PARTY_NOTICES.md`): beskärningen
+    hoppar vid scenbyten i stället för att glida över dem, ordtiderna följer ljudet även utan
+    Whisper, zoomen glider in snabbt och ut långsamt, och appen hittar de bästa bilderna för ett
+    omslag (stort, skarpt ansikte)
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -251,7 +255,8 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   format, och `POST /api/jobs/<id>/youtube` med `{ "clipIds", "firstAt", "everyHours" }`
   schemalägger flera klipp på YouTube, ett i taget.
 - `POST /api/jobs/<id>/clips/<clipId>/hooks` föreslår rubriker, och `POST .../cover` med
-  `{ "at": 12.5, "title": true }` gör en omslagsbild från den tiden i källvideon.
+  `{ "at": 12.5, "title": true }` gör en omslagsbild från den tiden i källvideon. `GET .../cover`
+  föreslår de bästa bilderna i klippet för ett omslag.
 - `POST /api/jobs/<id>/chapters` skriver kapitel för hela videon (minst tre, första på 0:00), och
   `POST /api/jobs/<id>/clips/<clipId>/posts` skriver inläggstexter per plattform för ett klipp.
 - `POST /api/jobs/<id>/search` med `{ "topic": "...", "clipCount": 3, "clipLength": "short",
@@ -352,6 +357,14 @@ utifrån, om den inte går att läsa från anropen (till exempel bakom en proxy 
 `X-Forwarded-Host`). `YTDLP_COOKIES` kan peka på en
 egen cookies.txt för YouTube (annars sparas cookies från inställningssidan i
 `storage/youtube-cookies.txt`).
+
+## Tack till
+
+Flera delar bygger på hur andra open source-projekt löser samma problem: PySceneDetect
+(scenbyten), OpenShorts (beskärning per scen, vem som pratar, punch-in, omslagsbilder), ClipsAI
+(beskärning per scen och talare), stable-ts (ordtider ut ur tystnad) och auto-editor (tal och
+tystnad i ljudet). Koden är skriven för den här appen. Licenser och detaljer finns i
+`THIRD_PARTY_NOTICES.md`.
 
 ## Tech stack
 

@@ -92,6 +92,8 @@ export const config = {
   // YuNet face detector (OpenCV Zoo, MIT license) used by smart_crop.py.
   faceModel: path.join(process.cwd(), 'assets', 'models', 'face_detection_yunet_2023mar.onnx'),
   wordTimingScript: path.join(process.cwd(), 'scripts', 'word_timing.py'),
+  // Picks the best moments of a clip for a cover image (a big, sharp face).
+  bestFramesScript: path.join(process.cwd(), 'scripts', 'best_frames.py'),
 };
 
 function clampInt(raw: string | undefined, fallback: number, min: number, max: number): number {

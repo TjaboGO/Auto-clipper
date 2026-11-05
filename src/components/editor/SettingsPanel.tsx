@@ -83,6 +83,8 @@ interface SettingsPanelProps {
   onSuggestHooks: () => Promise<string[]>;
   /** A cover image from source time `at`; returns its address. */
   onCover: (at: number, title: boolean) => Promise<string>;
+  /** The best moments for a cover (a big, sharp face), with small previews. */
+  onSuggestMoments: () => Promise<{ t: number; url: string; face: boolean }[]>;
   /** The word at the playhead (where new B-roll starts), or null. */
   anchor: { id: string; text: string } | null;
   /** The transcript words, for naming where B-roll starts. */
@@ -210,11 +212,11 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const camPossible = !!facecam && splitAllowed(edit.aspect);
   const groupSize = props.analysis?.group?.length ?? 0;
   const { brand, onBrand } = props;
-  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | 'broll' | 'hooks' | 'cover' | null>(null);
+  const [busy, setBusy] = useState<'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | 'broll' | 'hooks' | 'cover' | 'moments' | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const setLogo = (patch: Partial<LogoSettings>, key?: string) => set({ ...edit, logo: { ...edit.logo, ...patch } }, key);
 
-  async function run(what: 'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | 'broll' | 'hooks' | 'cover', job: () => Promise<string | null>) {
+  async function run(what: 'font' | 'logo' | 'style' | 'translate' | 'emoji' | 'music' | 'broll' | 'hooks' | 'cover' | 'moments', job: () => Promise<string | null>) {
     setBusy(what);
     setMessage(null);
     try {
@@ -255,6 +257,7 @@ export function SettingsPanel(props: SettingsPanelProps) {
   const [hooks, setHooks] = useState<string[]>([]);
   const [cover, setCover] = useState<string | null>(null);
   const [coverTitle, setCoverTitle] = useState(true);
+  const [moments, setMoments] = useState<{ t: number; url: string; face: boolean }[]>([]);
   const saveLook = (rawName: string) =>
     run('style', async () => {
       const name = rawName.trim() || 'Min stil';
@@ -935,6 +938,43 @@ export function SettingsPanel(props: SettingsPanelProps) {
               >
                 {busy === 'cover' ? 'Gör omslaget ...' : 'Gör omslag av bilden som visas nu'}
               </button>
+              <button
+                type="button"
+                disabled={busy === 'moments'}
+                onClick={() =>
+                  run('moments', async () => {
+                    const found = await props.onSuggestMoments();
+                    setMoments(found);
+                    return found.length ? null : 'Hittade inga bra bilder i klippet.';
+                  })
+                }
+                className="w-full rounded-md bg-base-800 hover:bg-base-700 disabled:opacity-50 px-3 py-1.5 text-sm"
+                title="AI:n letar efter bilder med ett stort, skarpt ansikte"
+              >
+                {busy === 'moments' ? 'Letar ...' : 'Hitta bästa bilderna'}
+              </button>
+              {moments.length > 0 && (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {moments.map((m) => (
+                    <button
+                      key={m.url}
+                      type="button"
+                      disabled={busy === 'cover'}
+                      onClick={() =>
+                        run('cover', async () => {
+                          setCover(await props.onCover(m.t, coverTitle));
+                          return null;
+                        })
+                      }
+                      className="rounded-md overflow-hidden border border-base-700 hover:border-accent-500 disabled:opacity-50"
+                      title="Gör omslag av den här bilden"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={m.url} alt={`Bild vid ${m.t.toFixed(1)} s`} className="w-full aspect-video object-cover bg-black" />
+                    </button>
+                  ))}
+                </div>
+              )}
               {cover && (
                 <div className="space-y-1.5">
                   {/* eslint-disable-next-line @next/next/no-img-element */}

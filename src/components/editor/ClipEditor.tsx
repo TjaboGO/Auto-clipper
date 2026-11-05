@@ -366,6 +366,12 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
     },
     [jobId, clip.id],
   );
+  const suggestMoments = useCallback(async () => {
+    const res = await fetch(`/api/jobs/${jobId}/clips/${clip.id}/cover`, { cache: 'no-store' });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? 'Kunde inte hitta några bilder.');
+    return body.moments as { t: number; url: string; face: boolean }[];
+  }, [jobId, clip.id]);
   const suggestEmojis = useCallback(async () => {
     const res = await fetch(`/api/jobs/${jobId}/clips/${clip.id}/emojis`, {
       method: 'POST',
@@ -697,6 +703,7 @@ export function ClipEditor({ initial }: { initial: EditorPayload }) {
             onSuggestEmojis={suggestEmojis}
             onSuggestHooks={suggestHooks}
             onCover={makeCover}
+            onSuggestMoments={suggestMoments}
             anchor={anchor}
             wordText={wordText}
             onSuggestBroll={suggestBroll}
