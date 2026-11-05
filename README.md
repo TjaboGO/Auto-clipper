@@ -1,2 +1,402 @@
-# Auto-clipper
-AI AUTO CLIPPER
+# Auto Clipper
+
+En egen AI-version av Opus Clip. Du laddar upp en lång video (eller klistrar in en YouTube-länk),
+och appen:
+
+1. Transkriberar ljudet med Gemini (hela videon, eller bara den del du väljer)
+2. Låter Gemini agera videoredaktör och plockar ut de bästa, mest klippbara ögonblicken, eller
+   de bästa ögonblicken om ett ämne du skriver in ("hitta ögonblick om pengar")
+3. Tittar på själva videon med Gemini när det är lite prat (sport, gaming, reaktioner), så den
+   hittar mål, reaktioner och roliga ögonblick även där ingen säger något. Klipp utan prat får
+   rubriken som text istället
+4. Klipper ut varje ögonblick, beskär det till stående 9:16-format och följer den som pratar i
+   bild (ansiktsspårning med OpenCV). Pratar två personer i snabb växling delas bilden istället, med
+   en person upptill och en nedtill. Syns inga ansikten följer bilden det som rör sig, till exempel
+   bollen. Spel med en facecam får kameran upptill och spelet nedtill, en skärminspelning med
+   webbkamera får skärmen upptill och ansiktet nedtill, och 3-4 personer som pratar om vartannat
+   får var sin ruta
+5. Bränner in animerade texter i CapCut/TikTok-stil, några ord i taget med ordet som sägs just nu
+   i guld. Whisper lyssnar på varje klipp så att orden lyser upp exakt när de sägs, och klippen
+   börjar och slutar på riktiga ordgränser
+6. Ger dig färdiga klipp att ladda ner, plus förslag på titel, bildtext och hashtags för varje
+   klipp
+7. Låter dig välja klipplängd, format, textstil, om AI:n ska markera nyckelorden och om den ska
+   titta på bilden redan när du startar, och hitta fler klipp i samma video efteråt utan att den
+   transkriberas igen
+8. Låter dig finjustera varje klipp i en redigerare med förhandsvisning direkt i webbläsaren:
+   klipp bort ord i texten, ta bort utfyllnadsord och pauser, dra i start och slut, rätta
+   stavning, byt textstil, typsnitt, format och layout, beskär själv och lägg till en rubrik.
+   Sen renderar du om klippet med ett klick
+9. Har ett eget varumärkespaket: 20 inbyggda typsnitt plus dina egna (ladda upp .ttf/.otf), din
+   logga i ett hörn, och "Min stil" som sparar hur dina klipp ska se ut och används för nya jobb
+10. Hämtar YouTube-videor även när YouTube vill att man är inloggad, med cookies från ditt konto,
+    och visar hur långt nedladdningen har kommit
+11. Låter dig välja AI-modell per steg: en billig för att lyssna, den bästa för att välja klipp.
+    Klippvalet kan också gå via OpenRouter, så du kan använda vilken modell som helst där
+12. Översätter texterna till ett annat språk (engelska, tyska, spanska med flera), vid uppladdning
+    eller i redigeraren, där du också kan rätta varje mening
+13. Exporterar undertexter (.srt och .vtt) och laddar ner alla klipp i en ZIP med undertexter och en
+    fil med bildtexter och hashtags. Appen kan skyddas med ett lösenord
+14. Lägger emojis ovanför texten på starka ord (AI:n föreslår, du kan välja själv), har åtta
+    textstilar med animationer som Studs, Fram ord för ord och Neon, och kan zooma in automatiskt
+    ibland medan någon pratar
+15. Lägger in B-roll, gratis videoklipp från Pexels som visar det som sägs (AI:n väljer, eller du
+    söker själv), och bakgrundsmusik från dina egna låtar som sänks automatiskt när någon pratar
+16. Exporterar ett klipp som projekt till Premiere Pro och DaVinci Resolve: en ZIP med tidslinjen
+    (XML), videon redan inramad, texterna som ett eget genomskinligt lager, B-roll och musik
+17. Publicerar klipp direkt på din YouTube-kanal, eller schemalägger dem, med titel, beskrivning
+    och hashtags ifyllda (och #Shorts för stående klipp)
+18. Visar vad poängen bygger på (krok, flyt, värde och trend), låter dig sortera klippen, och har
+    en kalender med allt du schemalagt och publicerat
+19. Sparar flera mallar med egna namn (text, rubrik, logga, zoom och förloppsstapel), som du väljer
+    när du skapar klipp eller använder på ett klipp i redigeraren. Klippen kan få en förloppsstapel
+    som fylls på medan de spelas
+20. Zoomar mjukt (glider in och ut) eller med hopp, och kan dölja hoppen där ord och pauser klippts
+    bort: varannan del visas lite närmare, eller en kort vit blixt vid varje klipp
+21. Skriver kapitel för hela videon (att klistra in i YouTube-beskrivningen) och färdiga
+    inläggstexter per klipp för TikTok, Instagram, YouTube Shorts, LinkedIn och X
+22. Tar bort utfyllnadsord och pauser redan när klippen skapas (om du vill), gör en kopia av ett
+    klipp i ett annat format med ett klick, och schemalägger alla klipp i ett jobb på YouTube med
+    jämna mellanrum, bästa klippet först
+23. Föreslår fler rubriker (krokar) med AI i redigeraren, och gör en omslagsbild av valfri bild i
+    klippet, med eller utan rubriken
+24. Lånar beprövade metoder från open source-projekt (se `THIRD_PARTY_NOTICES.md`): beskärningen
+    hoppar vid scenbyten i stället för att glida över dem, ordtiderna följer ljudet även utan
+    Whisper, zoomen glider in snabbt och ut långsamt, och appen hittar de bästa bilderna för ett
+    omslag (stort, skarpt ansikte)
+25. Har nio färdiga stilar (Podd, Energisk, Utbildning, Gaming, Berättelse, Motivation, Vlogg,
+    Nyheter, Minimal), var och en en hel look med text, tempo, zoom, övergångar, stapel och rubrik.
+    Och gör en mall av en video du gillar: ladda upp den eller klistra in en länk, så tittar och
+    lyssnar Gemini på den och appen sparar stilen som en mall, med en lista över det appen inte kan
+    göra än
+
+Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
+ansiktsspårningen och faster-whisper för ordtimingen.
+
+## Komma igång lokalt
+
+Krav: Node 20.9+ (22 rekommenderas), ffmpeg, python3 med paketen i `requirements.txt` (OpenCV och
+faster-whisper), och `yt-dlp` om du vill kunna klistra in YouTube-länkar.
+
+```bash
+npm install
+pip install -r requirements.txt
+cp .env.example .env
+# lägg in din GEMINI_API_KEY i .env (skaffa en gratis på https://aistudio.google.com/apikey)
+npm run dev
+```
+
+Öppna http://localhost:3000. Testerna körs med `npm test`.
+
+För YouTube-länkar: installera `pip install "yt-dlp[default]"`. yt-dlp behöver en JavaScript-motor
+för YouTube. Har du inte Deno installerat, lägg till raden `--js-runtimes node` i
+`~/.config/yt-dlp/config` så används Node istället (kräver Node 22 eller nyare). Docker-imagen har
+det redan inställt.
+
+## Köra med Docker (rekommenderas, t.ex. på Coolify)
+
+```bash
+cp .env.example .env
+# fyll i GEMINI_API_KEY i .env
+docker compose up --build
+```
+
+Docker-bilden innehåller redan ffmpeg, python3, opencv, faster-whisper, yt-dlp och typsnitten för
+texterna, så du behöver inte installera något extra på servern. Den har också en healthcheck som
+Coolify kan använda. Whisper-modellen laddas ner första gången ett jobb körs och sparas i
+`/app/storage/models`, så den finns kvar mellan deployer.
+
+I Coolify: peka på det här repot, sätt `GEMINI_API_KEY` som miljövariabel, och montera en volym på
+`/app/storage` så att renderade klipp överlever omstarter. Källvideorna sparas också där (för
+redigeraren) i `SOURCE_RETENTION_DAYS` dagar, så räkna med plats för dem.
+
+**Viktigt:** sätt `APP_PASSWORD` om appen ligger publikt. Utan den kan alla som hittar adressen
+starta jobb på din Gemini-nyckel och din server, och ladda ner videor med dina YouTube-cookies om
+du har sparat några. Med lösenord får alla sidor och API-anrop en inloggning, och du är inloggad i
+30 dagar. Skript kan skicka lösenordet som `Authorization: Bearer <lösenord>` istället. Byter du
+lösenord loggas alla ut. Kör appen över https (Coolify fixar det), så skickas lösenordet krypterat.
+
+**YouTube från en server:** YouTube stoppar ofta nedladdningar från datacenter ("Sign in to
+confirm you're not a bot"). Gå då till Inställningar i appen och klistra in en `cookies.txt` från
+en webbläsare där du är inloggad på YouTube (till exempel med tillägget "Get cookies.txt
+LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDLP_COOKIES` på en fil.
+
+## Hur det funkar under huven
+
+- `src/lib/gemini.ts` - pratar med Gemini via `@google/genai`. Ljudet laddas upp i bitar på max
+  10 minuter och transkriberas en bit i taget, så svaren aldrig blir för långa och tidsstämplarna
+  håller sig exakta även för långa videor. Sen får Gemini (som redaktör) välja ut de bästa klippen
+  i vald längd, eller de bästa om ett ämne, med titel, bildtext, hashtags, ett "virality score"
+  och klippets nyckelord (de markeras i texten). Gemini kan också titta på videon: en liten kopia
+  (en bild per sekund, kortsidan 360 px, ljudet i mono) laddas upp i bitar på max 10 minuter, och
+  Gemini listar det som händer i bild (händelser, reaktioner, roliga ögonblick, avslöjanden) med
+  tider, typ och hur starkt det är. Redaktören får sen både transkriptet och den listan. Alla anrop
+  använder ett JSON-schema, och kvotfel och tillfälliga serverfel försöks om automatiskt.
+- `src/lib/jobOptions.ts` - valen när ett jobb startas: klipplängd, format, textstil, nyckelord,
+  ämne, del av videon och om AI:n ska titta på bilden. Samma kontroll av värdena i formuläret och
+  på servern.
+- `scripts/smart_crop.py` - bestämmer hur varje klipp beskärs. ffmpeg avkodar och skalar ner tio
+  bilder per sekund ur klippet, och YuNet (OpenCV:s ansiktsdetektor) hittar ansiktena och var ögon
+  och mun sitter. Varje person får ett eget spår genom klippet. När det hörs tal jämförs
+  munrörelserna för att se vem som pratar, och kameran klipper till den personen. Ett kort "ja"
+  från någon annan räcker inte för ett byte. Rör sig personen panorerar kameran mjukt. Pratar två
+  personer i snabb växling blir klippet split screen istället, och texten hamnar i skarven mellan
+  dem. Modellen (MIT-licens) ligger i `assets/models`. Saknas den används OpenCV:s äldre
+  Haar-detektor, som bara följer det största ansiktet. Finns inga ansikten, eller bara små (som en
+  facecam i ett hörn), följer beskärningen rörelsen istället: kamerans egen rörelse räknas bort med
+  optiskt flöde, och bilden panorerar mjukt dit det händer mest.
+  Syns en ensam person som står still letar skriptet efter en webbkamera-ruta runt hen: raka
+  kanter som ligger på samma ställe genom hela klippet och slutar vid rutans hörn (linjer i rummet
+  bakom personen, en hylla eller en webbläsares verktygsfält, fortsätter förbi hörnen och räknas
+  inte). En ram runt kameran hoppas över. Rör sig bilden runt rutan är det spel, annars en skärm,
+  men bara om det finns något att se på den (text, knappar). En ruta på en tom bakgrund är ingen
+  skärminspelning. Hittas ingen tydlig ruta kan du ändå välja layouten, då med en uppskattad ruta
+  runt ansiktet. Det som rör sig i rutan (personen) räknas inte som action när bilden följer
+  spelet. Är 3-4 personer med nästan hela tiden blir de en grupp, i ordning från vänster till
+  höger, och tar de snabba turer väljs grupp-layouten automatiskt.
+- `scripts/word_timing.py` + `src/lib/wordTiming.ts` - när Gemini valt klippen lyssnar Whisper
+  (faster-whisper) på vart och ett och säger när varje ord sägs. Orden matchas mot Geminis text
+  (felhörda, missade och extra ord hanteras, liksom sammansatta ord som delats olika), och
+  klippets start och slut flyttas till riktiga ordgränser så inget klipp börjar eller slutar mitt i
+  ett ord. Om Whisper inte kan köras, eller matchningen blir för osäker, används den uppskattade
+  timingen istället, så jobbet går alltid igenom. Klipp där ingen pratar hoppas över.
+- `src/lib/moments.ts` - hjälp för det Gemini såg: hur stor del av videon som har prat, och vilka
+  klippkanter som ligger vid något som händer i bild. Sådana kanter flyttas bara utåt, aldrig
+  inåt, så uppbyggnaden före ett mål och jublet efter blir kvar.
+- `src/lib/captions.ts` - bygger en `.ass`-undertextfil per klipp i vald stil: Karaoke (ordet som
+  sägs lyser), Box (färgad ruta bakom ordet), Pop (ordet växer), Ord för ord, Enkel, Studs
+  (texten studsar in), Fram ord för ord (orden dyker upp när de sägs) och Neon (en mjuk, lysande
+  kant), plus rubriken överst. Animationerna räknas ut på samma sätt i förhandsvisningen. 20 fria typsnitt (SIL OFL och Apache 2.0, licenserna ligger i
+  `assets/fonts/licenses`) så texterna ser likadana ut på alla maskiner. Varje typsnitt har mått
+  för storlek och bredd, så ett brett typsnitt får färre bokstäver per rad.
+- `src/lib/edit/emoji.ts` - emojis ovanför texten. En emoji sitter på ett ord, tonar in och glider
+  upp lite när ordet sägs, och ligger kvar tills den textsidan är klar. Bilderna är färdiga PNG:er
+  i `assets/emoji` (från Noto Color Emoji, licensen ligger bredvid), samma i förhandsvisningen och
+  i ffmpeg (ett lager per emoji). AI:n föreslår emojis när den väljer klippen, eller senare i
+  redigeraren.
+- `src/lib/edit/zoom.ts` - automatisk zoom i layouten Följ talaren: varannan mening visas närmare
+  och markerade nyckelord får en kort inzoomning, som när man klipper mellan två kameravinklar.
+  ffmpeg lägger en uppförstorad kopia av bilden ovanpå medan zoomen pågår.
+- `src/lib/pexels.ts` + `src/lib/brollSuggest.ts` + `src/lib/edit/broll.ts` - B-roll. AI:n väljer
+  ord där en stockvideo skulle visa vad som sägs och en sökning på engelska, appen söker på Pexels
+  med din nyckel, väljer filen närmast 1080p och sparar den i `storage/broll` (en gång per video).
+  En B-roll sitter på ett ord och fyller bilden i några sekunder, under logga, emojis och text.
+  Klippets eget ljud hörs som vanligt. Den som filmat krediteras i redigeraren och i klipp.txt.
+- Bakgrundsmusik (i `src/lib/brand.ts` och `src/lib/renderGraph.ts`) - dina egna låtar sparas som
+  AAC. Vid rendering loopas låten till klippets längd, tonas in och ut och trycks ner med en
+  sidechain-kompressor medan någon pratar.
+- `src/lib/brand.ts` + `src/lib/fontFile.ts` - varumärkespaketet i `storage/brand`: dina
+  typsnitt, din logga och Min stil. Uppladdade typsnitt läses direkt i TypeScript (namn, radhöjd,
+  versalhöjd, bokstavsbredd och om å, ä och ö finns), så de får samma mått som de inbyggda. Vid
+  rendering får libass en mapp med bara ditt typsnitt, så inget inbyggt med samma namn kan ta
+  över. Loggan sparas som PNG (högst 800 px) och läggs på i ffmpeg under texterna, på samma
+  plats som i förhandsvisningen.
+- `src/app/settings` - inställningssidan: Min stil, egna typsnitt, logga och YouTube-cookies.
+- `src/lib/edit/translation.ts` - översatta texter. Varje mening översätts hel (ord för ord går
+  inte mellan språk) av samma modell som väljer klippen, och orden sprids över den tid den talade
+  meningen tar, längre ord får mer tid. Så följer markeringen talet även på det nya språket.
+  Översättningen sparas i klippets redigering, så den går att ångra och rätta.
+- `src/lib/edit/subtitles.ts` + `src/lib/exports.ts` + `src/lib/zip.ts` - undertextfiler med
+  samma ord som texterna i bilden (bortklippt, rättat, dolt och översatt följer med), i vanlig
+  undertextstorlek: högst två rader på runt 42 tecken. Filen följer den senast renderade versionen.
+  ZIP-filen skrivs av en liten egen ZIP-skrivare som strömmar klippen utan att packa dem i minnet.
+- `src/proxy.ts` + `src/lib/auth.ts` - lösenordet (`APP_PASSWORD`). Inloggningen ger en signerad
+  cookie. Uppladdningar går förbi proxyn, eftersom den bara skickar vidare de första 10 MB av en
+  förfrågan, och kollar inloggningen själva. Efter fem fel lösenord från samma adress får nästa
+  försök vänta, längre för varje gång.
+- `src/lib/render.ts` + `src/lib/renderGraph.ts` - renderar ett klipp i ett enda ffmpeg-kommando:
+  beskärning (följ talaren, split screen, spel med facecam, skärm med ansikte, grupp, eller hela
+  bilden med suddig bakgrund) i valt format. Layouter med flera delar beskär varje del för sig och
+  sätter ihop dem med `xstack`, med samma mått som förhandsvisningen ritar (`framePanels` i
+  `src/lib/edit/layout.ts`)
+  (9:16, 1:1, 4:5, 16:9), bortklippta ord och pauser (bilden väljs ut och flyttas ihop, ljudet
+  klipps med korta toningar så skarvarna inte klickar) och texterna. Pipelinen och redigeraren
+  renderar på samma sätt, så ett oredigerat klipp blir likadant om det renderas om.
+- `src/lib/edit/` - redigerarens logik, delad mellan webbläsaren och servern: tidslinjen (vilka
+  delar som klipps bort, hur tiden räknas om), textsidorna, bildformat och beskärning. Därför
+  visar förhandsvisningen samma sak som den färdiga videon.
+- `src/lib/editor.ts` - sparar varje klipps ord, ansiktsanalys och redigering, gör en liten
+  förhandsvideo och ljudvåg när redigeraren öppnas första gången, och renderar om klipp i kön
+  (med ny ansiktsanalys och exakt ordtiming om klippet förlängts). Sköter också städningen av
+  gamla källvideor.
+- `src/components/editor/` - redigeraren: förhandsvisning i en canvas, transkriptet, tidslinjen
+  och inställningarna. Ångra och gör om, autospar och kortkommandon (mellanslag spelar, Delete
+  klipper bort markerade ord, Ctrl+Z ångrar, pilarna spolar).
+- `src/lib/pipeline.ts` - kopplar ihop alla steg ovan och uppdaterar jobbets status så frontend kan
+  visa live-progress. Om ett klipp misslyckas fortsätter resten. I läget Auto tittar Gemini på
+  bilden när mindre än halva videon har prat, eller när videon saknar ljud. Misslyckas det, men
+  någon pratar, väljs klippen från det som sägs. "Hitta fler klipp" frågar Gemini igen på den
+  transkribering (och det den sett i bild) jobbet redan har, kan låta Gemini titta på videon först,
+  undviker det som redan är klipp och lägger till de nya klippen i samma jobb.
+- `src/lib/youtube.ts` - hämtar videon med `yt-dlp` om du klistrar in en länk istället för att
+  ladda upp en fil. Använder dina sparade cookies (en kopia per jobb, eftersom yt-dlp skriver i
+  filen), visar procent under nedladdningen och sparar videons titel. Vanliga fel (logga in,
+  åldersgräns, privat, borttagen, livesändning, för många förfrågningar) blir begripliga
+  meddelanden som säger vad du kan göra.
+- `src/lib/youtubePublish.ts` - publicering på YouTube. Du kopplar ditt konto en gång via din
+  egen Google-app (OAuth), och appen sparar en nyckel som förnyar inloggningen (i en fil som bara
+  servern kan läsa). Uppladdningen använder YouTubes återupptagbara uppladdning, så ett avbrott
+  fortsätter där det slutade. En uppladdning i taget, i en egen kö, med förlopp på klippet.
+- `src/lib/nle.ts` och `src/lib/nleExport.ts` - exporten till Premiere och DaVinci. Tidslinjen
+  skrivs som Final Cut Pro 7 XML, som båda programmen läser. Alla filer görs i klippets storlek
+  och bildfrekvens (videon inramad med 2 s extra i varje ände, grafiken som ProRes 4444 med
+  genomskinlighet, B-roll beskuren), så tidslinjen bara behöver klipp, ingen skalning. Varje
+  kant räknas från den exakta tiden, så klippen glider inte isär från texterna.
+- Jobb körs i en enkel kö i minnet (`src/lib/queue.ts`) och sparas till `storage/jobs.json`, så
+  historiken överlever en omstart. Jobb som var igång när servern startades om markeras som
+  avbrutna. Inget behov av en separat databas för ett projekt som det här.
+
+### API
+
+- `POST /api/jobs?filename=video.mp4&clipCount=6` med själva videofilen som request-body. Filen
+  strömmas direkt till disk, så även stora filer (max 2 GB) klarar sig utan mycket minne.
+- `POST /api/jobs` med JSON `{ "youtubeUrl": "https://...", "clipCount": 6 }` för en länk.
+- Båda tar valfritt `options` (JSON, som query-parameter vid uppladdning):
+  `{ "clipLength": "auto|short|medium|long|xlong", "aspect": "9:16|1:1|4:5|16:9",
+  "captionPreset": "karaoke|box|pop|word|clean|mine", "keywords": true, "topic": "pengar",
+  "range": { "start": 60, "end": 600 }, "visual": "auto|on|off", "fillers": true, "pauses": true }`. `visual` styr om Gemini
+  tittar på bilden: när det är lite prat (`auto`), alltid, eller aldrig. `mine` är Min stil.
+- `POST /api/jobs/<id>/clips/<clipId>/duplicate` med `{ "aspect": "1:1" }` gör en kopia i ett annat
+  format, och `POST /api/jobs/<id>/youtube` med `{ "clipIds", "firstAt", "everyHours" }`
+  schemalägger flera klipp på YouTube, ett i taget.
+- `POST /api/jobs/<id>/clips/<clipId>/hooks` föreslår rubriker, och `POST .../cover` med
+  `{ "at": 12.5, "title": true }` gör en omslagsbild från den tiden i källvideon. `GET .../cover`
+  föreslår de bästa bilderna i klippet för ett omslag.
+- `POST /api/jobs/<id>/chapters` skriver kapitel för hela videon (minst tre, första på 0:00), och
+  `POST /api/jobs/<id>/clips/<clipId>/posts` skriver inläggstexter per plattform för ett klipp.
+- `POST /api/jobs/<id>/search` med `{ "topic": "...", "clipCount": 3, "clipLength": "short",
+  "watch": true }` hittar fler klipp i ett klart jobb. `watch` låter Gemini titta på videon först,
+  om den inte redan gjort det.
+- `GET /api/jobs/<id>` för status och klipp, `GET /api/jobs` för de senaste jobben,
+  `DELETE /api/jobs/<id>` tar bort ett jobb med alla filer.
+- Redigeraren: `GET /api/jobs/<id>/clips/<clipId>/editor` (ord, analys, redigering, förhandsvideo),
+  `PUT .../edit` sparar en redigering, `POST .../render` renderar om klippet.
+- Varumärke: `GET /api/brand`, `POST /api/brand/fonts?filename=...` (filen som body),
+  `DELETE /api/brand/fonts/<id>`, `POST`/`DELETE /api/brand/logo` (bilden som body, `GET` visar
+  den), `PUT`/`DELETE /api/brand/style` (Min stil), `POST /api/brand/templates` med
+  `{ "name", "style" }` (samma namn ersätter mallen), `PUT`/`DELETE /api/brand/templates/<id>`.
+  En mall väljs vid uppladdning med `"captionPreset": "t-..."` och en färdig stil med `"s-podd"`,
+  `"s-energi"` och så vidare (se `src/lib/edit/looks.ts`). `POST /api/brand/templates/from-video`
+  gör en mall av en video (JSON `{ "url", "name" }`, eller filen som body med `?filename=...`), och
+  `GET /api/brand/templates/from-video/<id>` visar hur det går.
+- Projekt för Premiere och DaVinci: `POST /api/jobs/<id>/clips/<clipId>/project` börjar bygga,
+  `GET .../project?status` visar hur det går och `GET .../project` laddar ner ZIP-filen.
+- YouTube-cookies: `GET` (bara status, aldrig innehållet), `PUT` (cookies.txt som body) och
+  `DELETE /api/youtube-cookies`.
+- Publicera på YouTube: `GET /api/youtube` (status och adressen att lägga in hos Google),
+  `PUT`/`DELETE /api/youtube/app` (klient-id och hemlighet), `GET /api/youtube/connect` (skickar
+  dig till Google), `DELETE /api/youtube/account` (koppla från). Per klipp:
+  `GET /api/jobs/<id>/clips/<clipId>/youtube` (förslag på titel och text) och `POST` med
+  `{ "title", "description", "tags", "privacy": "public|unlisted|private", "publishAt" }`.
+  `GET /api/youtube/uploads` listar alla uppladdningar (för kalendern).
+
+## Kända begränsningar (värt att veta)
+
+- **Ordtimingen kostar lite tid och minne.** Whisper körs på serverns CPU, bara på de valda
+  klippen (inte hela videon). Med `small` tar det ungefär en halv till ett par minuter per jobb
+  beroende på servern, och behöver runt 1 GB RAM medan det körs. På en liten server: sätt
+  `WHISPER_MODEL=base`, eller `WORD_TIMING=off` för att stänga av det.
+- **Vem som pratar är en gissning.** Appen tittar på munrörelser medan det hörs tal, så den kan ta
+  fel, till exempel om den som pratar syns från sidan eller om någon annan skrattar eller tuggar.
+  Split screen bestäms för hela klippet och kan inte slås av och på mitt i det.
+- **Källvideon sparas en tid för redigeraren.** Den tas bort automatiskt efter
+  `SOURCE_RETENTION_DAYS` dagar (7 som standard) utan ändringar, eller när du tar bort jobbet.
+  Efter det finns klippen kvar men kan inte redigeras. Sätt 0 för att radera direkt efter jobbet.
+- **Förhandsvisningen är en lättare kopia.** Den visar exakt vad som renderas men i lägre
+  upplösning, och där ordtiderna är uppskattade kan klipp mitt i meningar se lite ojämna ut tills
+  klippet renderats (då tas exakta tider fram).
+- **Bildanalysen ser en bild per sekund.** Saker som går väldigt fort kan missas eller få lite fel
+  tid. Den kostar också mer Gemini-kvot och tid än att bara lyssna, så i läget Auto körs den bara
+  när det är lite prat. En sökning efter ett ämne som bara syns i bild (ett mål, en rolig min)
+  kräver att Gemini har tittat på videon, välj "Alltid" eller kryssa i rutan under "Hitta fler
+  klipp".
+- **Rörelseföljningen är enkel.** Den följer där det rör sig mest, så i en bild med rörelse
+  överallt (publik, konfetti, snabba kameraåkningar) kan den välja fel. Då kan du beskära själv i
+  redigeraren.
+- **YouTube-publicering kräver en egen Google-app.** Det är gratis men tar tio minuter att ställa
+  in (stegen står på inställningssidan). En ny app får ladda upp ungefär sex videor per dag, och
+  tills Google har granskat appen blir videorna låsta som privata. Då publicerar du dem själv i
+  YouTube Studio. Publiceringen är testad mot en lokal testserver, inte mot riktiga YouTube.
+- **Redigeraren har inte allt som Opus har.** Det finns inga övergångar eller publicering direkt
+  till TikTok. B-roll kommer bara från Pexels och kräver en egen (gratis) nyckel, och
+  det finns ingen inbyggd musik: du laddar upp egna låtar. I förhandsvisningen hörs musiken utan
+  sänkningen under tal. Emojierna är ett urval på drygt 100 vanliga. Zoomen glider alltid mot
+  samma punkt (mitten, lite upp), den följer inte ett ansikte åt sidan. Delarna i split screen, facecam,
+  skärm och grupp följer automatiskt och kan byta plats och storlek, men inte beskäras för hand.
+  Loggan är en stillbild.
+- **Facecam och grupp bygger på ansiktena.** Webbkamera-rutan hittas från raka, fasta kanter, så en
+  rund kamera eller en person som är utklippt rakt på spelet (greenscreen) får en uppskattad ruta.
+  En liten webbkamera blir suddig när den förstoras till halva bilden, det går inte att undvika.
+  Grupp-layouten tar bara med personer som syns nästan hela klippet, och högst fyra.
+  Layouterna med flera delar finns inte i 16:9 (utom grupp).
+- **Egna typsnitt:** bara .ttf och .otf (inte WOFF eller samlingar). Typsnitt med väldigt hög
+  radhöjd ger en hög ruta i Box-stilen, så som libass ritar den (förhandsvisningen visar samma
+  sak). Använd bara typsnitt du har rätt att använda i video.
+- **YouTube-nedladdningen är inte provad mot riktiga YouTube här.** Den är testad med en lokal
+  testserver (förlopp, titel, cookies och fel), men YouTube ändrar sig ofta. Håll `yt-dlp`
+  uppdaterad (bygg om Docker-bilden) om nedladdningar börjar faila.
+- **En kö-arbetare i taget som standard** (`QUEUE_CONCURRENCY=1`). Höj den om servern har gott om
+  CPU, men ffmpeg + ansiktsdetektering är tungt - testa dig fram.
+- **Ett lösenord, inte flera användare.** Alla som har lösenordet ser samma jobb. Det här är byggt
+  som ett personligt verktyg, inte en SaaS. Se varningen under Docker-avsnittet.
+- **Översättningen är per mening.** Orden sprids jämnt över meningens tid, så markeringen följer
+  talet ungefär, inte exakt. Klipper du bort ord mitt i en mening visas ändå hela den översatta
+  meningen. Språk med andra skriftsystem (arabiska, kinesiska ...) finns inte med, eftersom
+  typsnitten saknar de tecknen.
+- **Lagring är lokala filer**, inte S3 eller liknande. Funkar fint på en enda server, men skalar
+  inte till flera instanser utan ändringar.
+
+## Miljövariabler
+
+Se `.env.example`. Den viktiga är `GEMINI_API_KEY`. `GEMINI_MODEL` är `gemini-3.8-flash` som
+standard. Google pensionerar gamla modeller med jämna mellanrum, så byt till en aktuell om jobben
+börjar faila med att modellen inte hittas. Vill du ha olika modeller per steg finns
+`GEMINI_TRANSCRIBE_MODEL` (lyssna på ljudet), `GEMINI_VISION_MODEL` (titta på videon) och
+`GEMINI_HIGHLIGHT_MODEL` (välja klippen). Tomma betyder `GEMINI_MODEL`. Med
+`HIGHLIGHT_PROVIDER=openrouter`, `OPENROUTER_API_KEY` och `OPENROUTER_MODEL` (namnet som det står
+på OpenRouters modellsida, till exempel `google/gemini-3.8-flash`) går klippvalet via OpenRouter
+istället. Bara texten skickas dit, ljud och video går fortfarande till Gemini, så
+`GEMINI_API_KEY` behövs ändå. `WORD_TIMING` och `WHISPER_MODEL` styr ordtimingen, och
+`SOURCE_RETENTION_DAYS` hur länge källvideon sparas för redigeraren. `APP_PASSWORD` sätter ett
+lösenord för hela appen (tomt = öppen). `PEXELS_API_KEY` är nyckeln för B-roll (annars kan den
+sparas på inställningssidan). `GOOGLE_CLIENT_ID` och `GOOGLE_CLIENT_SECRET` är din Google-app för
+YouTube-publicering (annars sparas den på inställningssidan), och `PUBLIC_URL` appens adress
+utifrån, om den inte går att läsa från anropen (till exempel bakom en proxy som inte skickar
+`X-Forwarded-Host`). `YTDLP_COOKIES` kan peka på en
+egen cookies.txt för YouTube (annars sparas cookies från inställningssidan i
+`storage/youtube-cookies.txt`).
+
+## Tack till
+
+Flera delar bygger på hur andra open source-projekt löser samma problem: PySceneDetect
+(scenbyten), OpenShorts (beskärning per scen, vem som pratar, punch-in, omslagsbilder), ClipsAI
+(beskärning per scen och talare), stable-ts (ordtider ut ur tystnad) och auto-editor (tal och
+tystnad i ljudet). Koden är skriven för den här appen. Licenser och detaljer finns i
+`THIRD_PARTY_NOTICES.md`.
+
+## Tech stack
+
+Next.js 16 (App Router, TypeScript) + React 19 + Tailwind, `@google/genai` för Gemini,
+ffmpeg/ffprobe för videobehandling, Python + OpenCV för ansiktsspårning, faster-whisper för
+ordtiming, `yt-dlp` för YouTube-nedladdning.
+
+## Plan framåt
+
+1. ~~Exakt ordtiming och rena klippkanter~~ (klar)
+2. ~~Bättre ansiktsföljning: bättre ansiktsdetektor, följa den som pratar, split screen när två
+   pratar~~ (klar)
+3. ~~Redigerare: klipp bort ord, utfyllnadsord och pauser, flytta start och slut, rätta ord,
+   textstilar, format, layout, manuell beskärning, rubrik, rendera om~~ (klar)
+4. ~~Fler val när jobbet startas: klipplängd, format, textstil, sökruta ("hitta ögonblick om X"),
+   nyckelord i texten, del av videon, och "hitta fler klipp" i efterhand~~ (klar)
+5. ~~Låta Gemini titta på videon, så det funkar även för innehåll utan prat, och följa rörelsen
+   när det inte finns några ansikten~~ (klar)
+6. ~~YouTube-cookies, begripliga fel och nedladdningsförlopp. Fler typsnitt, egna typsnitt, logga
+   och Min stil~~ (klar)
+7. ~~Fler layouter: spel med facecam ovanpå varandra, skärmdelning med ansikte, och 3-4 personer.
+   Välja AI-modell per steg och byta standardmodell till Gemini 3.8 Flash. OpenRouter som valfri
+   leverantör för klippvalet~~ (klar)
+8. ~~Lösenord för appen, översatta texter, SRT-export och alla klipp som ZIP~~ (klar)
+9. ~~Emojis i texterna, fler textanimationer och automatisk zoom~~ (klar)
+10. ~~B-roll (till exempel från Pexels med din egen nyckel) och bakgrundsmusik~~ (klar)
+11. ~~Publicera direkt till YouTube, och export till Premiere och DaVinci Resolve~~ (klar)

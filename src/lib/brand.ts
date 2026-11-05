@@ -1,0 +1,351 @@
+// Your brand kit: fonts you uploaded, your logo and "Min stil" (the look new
+// clips get). Kept in storage/brand; brand.json lists what's there.
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { config } from './config';
+import { run } from './exec';
+import { captionMetrics, readFontFile } from './fontFile';
+import { probeDimensions, probeDuration, probeHasAudio } from './probe';
+import { setCustomFonts, type CustomFont } from './edit/fonts';
+import { sanitizeStyle } from './edit/presets';
+import type { BrandInfo, BrandStyle, LogoImage, MusicTrack, StyleOrigin, StyleTemplate } from './edit/types';
+
+export const MAX_FONTS = 30;
+export const MAX_FONT_BYTES = 20 * 1024 * 1024;
+export const MAX_LOGO_BYTES = 10 * 1024 * 1024;
+export const MAX_MUSIC = 30;
+export const MAX_MUSIC_BYTES = 40 * 1024 * 1024;
+// Long enough for any clip; longer files are cut.
+const MAX_MUSIC_SECONDS = 15 * 60;
+// The logo is stored no bigger than this; it's a corner of a 1080p frame.
+const LOGO_MAX_SIDE = 800;
+
+// Runtime data, not code: the paths are marked so the bundler doesn't trace them.
+const brandFile = () => path.join(/* turbopackIgnore: true */ config.brandDir, 'brand.json');
+const fontsDir = () => path.join(/* turbopackIgnore: true */ config.brandDir, 'fonts');
+export const logoFile = () => path.join(/* turbopackIgnore: true */ config.brandDir, 'logo.png');
+const musicDir = () => path.join(/* turbopackIgnore: true */ config.brandDir, 'music');
+
+let cache: BrandInfo | null = null;
+
+function load(): BrandInfo {
+  if (cache) return cache;
+  let raw: Partial<BrandInfo> = {};
+  try {
+    raw = JSON.parse(fs.readFileSync(brandFile(), 'utf8'));
+  } catch {
+    // No brand kit yet.
+  }
+  const fonts = Array.isArray(raw.fonts)
+    ? raw.fonts.filter(
+        (f) =>
+          f &&
+          typeof f.id === 'string' &&
+          /^u-[0-9a-f]+$/.test(f.id) &&
+          typeof f.file === 'string' &&
+          fs.existsSync(path.join(/* turbopackIgnore: true */ fontsDir(), path.basename(f.file))),
+      )
+    : [];
+  const music = Array.isArray(raw.music)
+    ? raw.music.filter(
+        (m) =>
+          m &&
+          typeof m.id === 'string' &&
+          /^m-[0-9a-f]+$/.test(m.id) &&
+          typeof m.file === 'string' &&
+          fs.existsSync(path.join(/* turbopackIgnore: true */ musicDir(), path.basename(m.file))),
+      )
+    : [];
+  const templates = Array.isArray(raw.templates)
+    ? raw.templates.flatMap((t) => {
+        const style = t && typeof t.id === 'string' && /^t-[0-9a-f]{8,32}$/.test(t.id) && typeof t.name === 'string' ? sanitizeStyle(t) : null;
+        if (!style) return [];
+        const origin = sanitizeOrigin(t.origin);
+        return [{ ...style, id: t.id, name: t.name.slice(0, TEMPLATE_NAME_MAX), savedAt: t.savedAt ?? style.savedAt, ...(origin ? { origin } : {}) }];
+      })
+    : [];
+  cache = {
+    fonts,
+    logo: raw.logo && fs.existsSync(logoFile()) ? raw.logo : null,
+    style: raw.style ?? null,
+    music,
+    templates,
+  };
+  setCustomFonts(cache.fonts);
+  return cache;
+}
+
+function save(next: BrandInfo): void {
+  fs.mkdirSync(config.brandDir, { recursive: true });
+  const tmp = `${brandFile()}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
+  fs.renameSync(tmp, brandFile());
+  cache = next;
+  setCustomFonts(next.fonts);
+}
+
+/** The whole brand kit (also makes your fonts known to the caption code). */
+export function brandInfo(): BrandInfo {
+  return load();
+}
+
+/** "Min stil", checked again: a font that has been deleted falls back to the default. */
+export function brandStyle(): BrandStyle | null {
+  const { style } = load();
+  return style ? sanitizeStyle(style) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Fonts
+// ---------------------------------------------------------------------------
+
+/** Add an uploaded .ttf/.otf. Throws with a message for the user if it can't be used. */
+export function addFont(buf: Buffer, originalName: string): CustomFont {
+  const brand = load();
+  if (brand.fonts.length >= MAX_FONTS) {
+    throw new Error(`Du kan ha högst ${MAX_FONTS} egna typsnitt. Ta bort något först.`);
+  }
+  const info = readFontFile(buf);
+  const id = `u-${crypto.createHash('sha1').update(buf).digest('hex').slice(0, 10)}` as const;
+  if (brand.fonts.some((f) => f.id === id)) throw new Error('Det här typsnittet är redan uppladdat.');
+  // libass finds the font by name, and the name goes in a comma-separated
+  // style line: the full name, or the older family name, without commas.
+  const family = [info.fullName, info.legacyFamily].find((name) => name && !name.includes(','));
+  if (!family) throw new Error('Typsnittets namn innehåller kommatecken, och det fungerar inte i texterna.');
+
+  const file = `${id}.${info.format}`;
+  fs.mkdirSync(fontsDir(), { recursive: true });
+  fs.writeFileSync(path.join(/* turbopackIgnore: true */ fontsDir(), file), buf);
+  const regular = /^(regular|normal|book|roman)$/i.test(info.subfamily);
+  const font: CustomFont = {
+    id,
+    label: (regular ? info.family : `${info.family} ${info.subfamily}`).slice(0, 60),
+    family,
+    file,
+    ...captionMetrics(info),
+    original: path.basename(originalName).slice(0, 120),
+    nordic: info.nordic,
+    addedAt: new Date().toISOString(),
+  };
+  save({ ...brand, fonts: [...brand.fonts, font] });
+  return font;
+}
+
+export function removeFont(id: string): boolean {
+  const brand = load();
+  const font = brand.fonts.find((f) => f.id === id);
+  if (!font) return false;
+  fs.rmSync(path.join(/* turbopackIgnore: true */ fontsDir(), path.basename(font.file)), { force: true });
+  // Min stil and templates with this font get the default one instead.
+  const withoutFont = <T extends BrandStyle>(look: T): T =>
+    look.captions.font === id ? { ...look, captions: { ...look.captions, font: 'montserrat' as const } } : look;
+  save({
+    ...brand,
+    fonts: brand.fonts.filter((f) => f.id !== id),
+    style: brand.style ? withoutFont(brand.style) : brand.style,
+    templates: (brand.templates ?? []).map(withoutFont),
+  });
+  return true;
+}
+
+/** The file of one of your fonts, by its file name (for serving and rendering), or null. */
+export function customFontPath(file: string): string | null {
+  const font = load().fonts.find((f) => f.file === file);
+  return font ? path.join(/* turbopackIgnore: true */ fontsDir(), path.basename(font.file)) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Logo
+// ---------------------------------------------------------------------------
+
+function isImage(buf: Buffer): boolean {
+  const png = buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const jpeg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  const webp = buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP';
+  return png || jpeg || webp;
+}
+
+/**
+ * Save an uploaded logo (PNG, JPEG or WebP) as a PNG no bigger than
+ * LOGO_MAX_SIDE, keeping transparency.
+ */
+export async function setLogo(buf: Buffer): Promise<LogoImage> {
+  if (!isImage(buf)) throw new Error('Loggan måste vara en PNG-, JPEG- eller WebP-bild.');
+  fs.mkdirSync(config.brandDir, { recursive: true });
+  const upload = path.join(/* turbopackIgnore: true */ config.brandDir, `logo-upload-${process.pid}-${Date.now()}`);
+  const converted = path.join(/* turbopackIgnore: true */ config.brandDir, `logo-new-${process.pid}-${Date.now()}.png`);
+  fs.writeFileSync(upload, buf);
+  try {
+    await run(
+      'ffmpeg',
+      [
+        '-v', 'error',
+        '-y',
+        '-i', upload,
+        '-frames:v', '1',
+        '-vf', `scale='min(${LOGO_MAX_SIDE},iw)':'min(${LOGO_MAX_SIDE},ih)':force_original_aspect_ratio=decrease`,
+        '-pix_fmt', 'rgba',
+        converted,
+      ],
+      {},
+      60 * 1000,
+    );
+    const { width, height } = await probeDimensions(converted);
+    fs.renameSync(converted, logoFile());
+    const logo: LogoImage = { width, height, version: Date.now().toString(36) };
+    save({ ...load(), logo });
+    return logo;
+  } catch (err) {
+    console.warn('[brand] could not read the logo:', err);
+    throw new Error('Kunde inte läsa bilden. Prova en annan PNG eller JPEG.');
+  } finally {
+    fs.rmSync(upload, { force: true });
+    fs.rmSync(converted, { force: true });
+  }
+}
+
+export function removeLogo(): void {
+  fs.rmSync(logoFile(), { force: true });
+  save({ ...load(), logo: null });
+}
+
+// ---------------------------------------------------------------------------
+// Music
+// ---------------------------------------------------------------------------
+
+/**
+ * Add an uploaded music file (mp3, m4a, wav, ogg ...): stored as AAC in an
+ * .m4a, at most MAX_MUSIC_SECONDS long. Throws with a message for the user
+ * if it can't be used.
+ */
+export async function addMusic(buf: Buffer, originalName: string): Promise<MusicTrack> {
+  const brand = load();
+  const music = brand.music ?? [];
+  if (music.length >= MAX_MUSIC) throw new Error(`Du kan ha högst ${MAX_MUSIC} låtar. Ta bort någon först.`);
+  const id = `m-${crypto.createHash('sha1').update(buf).digest('hex').slice(0, 10)}`;
+  if (music.some((m) => m.id === id)) throw new Error('Den här låten är redan uppladdad.');
+  fs.mkdirSync(musicDir(), { recursive: true });
+  const upload = path.join(/* turbopackIgnore: true */ musicDir(), `${id}-upload`);
+  const file = `${id}.m4a`;
+  const stored = path.join(/* turbopackIgnore: true */ musicDir(), file);
+  fs.writeFileSync(upload, buf);
+  try {
+    if (!(await probeHasAudio(upload).catch(() => false))) {
+      throw new Error('Filen har inget ljud som går att läsa. Prova en mp3, m4a eller wav.');
+    }
+    await run(
+      'ffmpeg',
+      ['-v', 'error', '-y', '-i', upload, '-vn', '-t', String(MAX_MUSIC_SECONDS), '-ac', '2', '-ar', '44100', '-c:a', 'aac', '-b:a', '160k', stored],
+      {},
+      5 * 60 * 1000,
+    );
+    const duration = await probeDuration(stored);
+    if (!(duration >= 1)) throw new Error('Låten är för kort.');
+    const name = path.basename(originalName).replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').trim().slice(0, 80) || 'Låt';
+    const track: MusicTrack = { id, name, file, duration: Math.round(duration * 10) / 10, addedAt: new Date().toISOString() };
+    save({ ...load(), music: [...music, track] });
+    return track;
+  } catch (err) {
+    fs.rmSync(stored, { force: true });
+    if (err instanceof Error && /Filen har inget ljud|för kort/.test(err.message)) throw err;
+    console.warn('[brand] could not read the music file:', err);
+    throw new Error('Kunde inte läsa ljudfilen. Prova en mp3, m4a eller wav.');
+  } finally {
+    fs.rmSync(upload, { force: true });
+  }
+}
+
+export function removeMusic(id: string): boolean {
+  const brand = load();
+  const track = (brand.music ?? []).find((m) => m.id === id);
+  if (!track) return false;
+  fs.rmSync(path.join(/* turbopackIgnore: true */ musicDir(), path.basename(track.file)), { force: true });
+  save({ ...brand, music: (brand.music ?? []).filter((m) => m.id !== id) });
+  return true;
+}
+
+/** One of your tracks (for playing and rendering), or null. */
+export function musicTrack(id: string): { track: MusicTrack; path: string } | null {
+  const track = (load().music ?? []).find((m) => m.id === id);
+  return track ? { track, path: path.join(/* turbopackIgnore: true */ musicDir(), path.basename(track.file)) } : null;
+}
+
+// ---------------------------------------------------------------------------
+// Min stil
+// ---------------------------------------------------------------------------
+
+export function saveStyle(raw: unknown): BrandStyle {
+  const style = sanitizeStyle(raw);
+  if (!style) throw new Error('Stilen saknar textinställningar.');
+  save({ ...load(), style });
+  return style;
+}
+
+export function clearStyle(): void {
+  save({ ...load(), style: null });
+}
+
+// ---------------------------------------------------------------------------
+// Templates (Mallar): named looks, as many as you like (well, 30)
+// ---------------------------------------------------------------------------
+
+export const TEMPLATE_NAME_MAX = 40;
+const MAX_TEMPLATES = 30;
+
+/**
+ * Save a look as a template. With the name of one you already have, that
+ * one is replaced (so "Spara" with the same name updates it).
+ */
+/** Where a template came from (a video), kept only if it looks right. */
+function sanitizeOrigin(raw: unknown): StyleOrigin | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  if (o.kind !== 'video' || typeof o.from !== 'string' || typeof o.summary !== 'string' || !Array.isArray(o.notes)) return undefined;
+  return {
+    kind: 'video',
+    from: o.from.slice(0, 200),
+    summary: o.summary.slice(0, 800),
+    notes: o.notes.filter((n): n is string => typeof n === 'string').map((n) => n.slice(0, 300)).slice(0, 12),
+  };
+}
+
+export function saveTemplate(rawName: unknown, rawStyle: unknown, rawOrigin?: unknown): StyleTemplate {
+  const name = typeof rawName === 'string' ? rawName.replace(/\s+/g, ' ').trim().slice(0, TEMPLATE_NAME_MAX) : '';
+  if (!name) throw new Error('Mallen behöver ett namn.');
+  const style = sanitizeStyle(rawStyle);
+  if (!style) throw new Error('Mallen saknar textinställningar.');
+  const brand = load();
+  const templates = brand.templates ?? [];
+  const same = templates.find((t) => t.name.toLowerCase() === name.toLowerCase());
+  if (!same && templates.length >= MAX_TEMPLATES) throw new Error(`Du kan ha högst ${MAX_TEMPLATES} mallar. Ta bort någon först.`);
+  const origin = sanitizeOrigin(rawOrigin);
+  const template: StyleTemplate = { ...style, id: same?.id ?? `t-${crypto.randomBytes(6).toString('hex')}`, name, ...(origin ? { origin } : {}) };
+  save({ ...brand, templates: same ? templates.map((t) => (t.id === same.id ? template : t)) : [...templates, template] });
+  return template;
+}
+
+export function renameTemplate(id: string, rawName: unknown): StyleTemplate {
+  const name = typeof rawName === 'string' ? rawName.replace(/\s+/g, ' ').trim().slice(0, TEMPLATE_NAME_MAX) : '';
+  if (!name) throw new Error('Mallen behöver ett namn.');
+  const brand = load();
+  const templates = brand.templates ?? [];
+  const template = templates.find((t) => t.id === id);
+  if (!template) throw new Error('Mallen finns inte.');
+  if (templates.some((t) => t.id !== id && t.name.toLowerCase() === name.toLowerCase())) throw new Error('Du har redan en mall med det namnet.');
+  const renamed = { ...template, name };
+  save({ ...brand, templates: templates.map((t) => (t.id === id ? renamed : t)) });
+  return renamed;
+}
+
+export function removeTemplate(id: string): boolean {
+  const brand = load();
+  const templates = brand.templates ?? [];
+  if (!templates.some((t) => t.id === id)) return false;
+  save({ ...brand, templates: templates.filter((t) => t.id !== id) });
+  return true;
+}
+
+export function brandTemplate(id: string): StyleTemplate | null {
+  return (load().templates ?? []).find((t) => t.id === id) ?? null;
+}

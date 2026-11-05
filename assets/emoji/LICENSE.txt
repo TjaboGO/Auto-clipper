@@ -1,0 +1,11 @@
+These emoji images were rendered at 128 px from Noto Color Emoji
+(https://github.com/googlefonts/noto-emoji), Copyright 2013-2017 Google Inc.
+
+The Noto Emoji images are licensed under the Apache License, Version 2.0:
+https://www.apache.org/licenses/LICENSE-2.0
+
+The Noto Color Emoji font they come from is licensed under the SIL Open
+Font License, Version 1.1: https://openfontlicense.org
+
+File names are the emoji's Unicode code points in hex, joined by "-"
+(variation selector FE0F left out).
