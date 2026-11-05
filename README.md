@@ -64,6 +64,11 @@ och appen:
     hoppar vid scenbyten i stället för att glida över dem, ordtiderna följer ljudet även utan
     Whisper, zoomen glider in snabbt och ut långsamt, och appen hittar de bästa bilderna för ett
     omslag (stort, skarpt ansikte)
+25. Har nio färdiga stilar (Podd, Energisk, Utbildning, Gaming, Berättelse, Motivation, Vlogg,
+    Nyheter, Minimal), var och en en hel look med text, tempo, zoom, övergångar, stapel och rubrik.
+    Och gör en mall av en video du gillar: ladda upp den eller klistra in en länk, så tittar och
+    lyssnar Gemini på den och appen sparar stilen som en mall, med en lista över det appen inte kan
+    göra än
 
 Allt körs i en enda container: Next.js-appen, ffmpeg för videoklippning, Python/OpenCV för
 ansiktsspårningen och faster-whisper för ordtimingen.
@@ -270,7 +275,10 @@ LOCALLY"). Använd gärna ett konto bara för det här. Du kan också peka `YTDL
   `DELETE /api/brand/fonts/<id>`, `POST`/`DELETE /api/brand/logo` (bilden som body, `GET` visar
   den), `PUT`/`DELETE /api/brand/style` (Min stil), `POST /api/brand/templates` med
   `{ "name", "style" }` (samma namn ersätter mallen), `PUT`/`DELETE /api/brand/templates/<id>`.
-  En mall väljs vid uppladdning med `"captionPreset": "t-..."`.
+  En mall väljs vid uppladdning med `"captionPreset": "t-..."` och en färdig stil med `"s-podd"`,
+  `"s-energi"` och så vidare (se `src/lib/edit/looks.ts`). `POST /api/brand/templates/from-video`
+  gör en mall av en video (JSON `{ "url", "name" }`, eller filen som body med `?filename=...`), och
+  `GET /api/brand/templates/from-video/<id>` visar hur det går.
 - Projekt för Premiere och DaVinci: `POST /api/jobs/<id>/clips/<clipId>/project` börjar bygga,
   `GET .../project?status` visar hur det går och `GET .../project` laddar ner ZIP-filen.
 - YouTube-cookies: `GET` (bara status, aldrig innehållet), `PUT` (cookies.txt som body) och

@@ -69,8 +69,14 @@ export function CaptionPresetPicker(props: {
 }) {
   const card = (selected: boolean) =>
     `rounded-lg border p-2 text-left ${selected ? 'border-accent-500 bg-accent-500/10' : 'border-base-700 hover:border-base-600 bg-base-900'}`;
+  // With looks (the upload form), the groups get a heading each.
+  const grouped = !!props.looks?.length;
+  const heading = (text: string) =>
+    grouped ? <p className="col-span-full text-[11px] font-semibold uppercase tracking-wide text-gray-500 mt-1">{text}</p> : null;
+  const own = !!props.mine || !!props.templates?.length;
   return (
     <div className={`grid gap-2 ${props.columns ?? 'grid-cols-2'}`}>
+      {own && heading('Dina stilar')}
       {props.mine && (
         <button type="button" onClick={props.mine.onSelect} aria-pressed={props.value === 'mine'} className={card(props.value === 'mine')}>
           <StyleSample style={props.mine.style.captions} fontsReady={props.fontsReady} />
@@ -85,6 +91,7 @@ export function CaptionPresetPicker(props: {
           <span className="block text-[11px] text-gray-400 leading-tight">Din mall</span>
         </button>
       ))}
+      {heading('Färdiga stilar')}
       {(props.looks ?? []).map(({ look, onSelect }) => (
         <button key={look.id} type="button" onClick={onSelect} aria-pressed={props.value === look.id} className={card(props.value === look.id)}>
           <StyleSample style={look.style.captions} fontsReady={props.fontsReady} />
@@ -92,6 +99,7 @@ export function CaptionPresetPicker(props: {
           <span className="block text-[11px] text-gray-400 leading-tight">{look.description}</span>
         </button>
       ))}
+      {heading('Bara textstil')}
       {CAPTION_PRESETS.map((p) => (
         <button
           key={p.id}

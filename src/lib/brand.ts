@@ -9,7 +9,7 @@ import { captionMetrics, readFontFile } from './fontFile';
 import { probeDimensions, probeDuration, probeHasAudio } from './probe';
 import { setCustomFonts, type CustomFont } from './edit/fonts';
 import { sanitizeStyle } from './edit/presets';
-import type { BrandInfo, BrandStyle, LogoImage, MusicTrack, StyleTemplate } from './edit/types';
+import type { BrandInfo, BrandStyle, LogoImage, MusicTrack, StyleOrigin, StyleTemplate } from './edit/types';
 
 export const MAX_FONTS = 30;
 export const MAX_FONT_BYTES = 20 * 1024 * 1024;
@@ -60,7 +60,9 @@ function load(): BrandInfo {
   const templates = Array.isArray(raw.templates)
     ? raw.templates.flatMap((t) => {
         const style = t && typeof t.id === 'string' && /^t-[0-9a-f]{8,32}$/.test(t.id) && typeof t.name === 'string' ? sanitizeStyle(t) : null;
-        return style ? [{ ...style, id: t.id, name: t.name.slice(0, TEMPLATE_NAME_MAX), savedAt: t.savedAt ?? style.savedAt }] : [];
+        if (!style) return [];
+        const origin = sanitizeOrigin(t.origin);
+        return [{ ...style, id: t.id, name: t.name.slice(0, TEMPLATE_NAME_MAX), savedAt: t.savedAt ?? style.savedAt, ...(origin ? { origin } : {}) }];
       })
     : [];
   cache = {
@@ -295,7 +297,20 @@ const MAX_TEMPLATES = 30;
  * Save a look as a template. With the name of one you already have, that
  * one is replaced (so "Spara" with the same name updates it).
  */
-export function saveTemplate(rawName: unknown, rawStyle: unknown): StyleTemplate {
+/** Where a template came from (a video), kept only if it looks right. */
+function sanitizeOrigin(raw: unknown): StyleOrigin | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  if (o.kind !== 'video' || typeof o.from !== 'string' || typeof o.summary !== 'string' || !Array.isArray(o.notes)) return undefined;
+  return {
+    kind: 'video',
+    from: o.from.slice(0, 200),
+    summary: o.summary.slice(0, 800),
+    notes: o.notes.filter((n): n is string => typeof n === 'string').map((n) => n.slice(0, 300)).slice(0, 12),
+  };
+}
+
+export function saveTemplate(rawName: unknown, rawStyle: unknown, rawOrigin?: unknown): StyleTemplate {
   const name = typeof rawName === 'string' ? rawName.replace(/\s+/g, ' ').trim().slice(0, TEMPLATE_NAME_MAX) : '';
   if (!name) throw new Error('Mallen behöver ett namn.');
   const style = sanitizeStyle(rawStyle);
@@ -304,7 +319,8 @@ export function saveTemplate(rawName: unknown, rawStyle: unknown): StyleTemplate
   const templates = brand.templates ?? [];
   const same = templates.find((t) => t.name.toLowerCase() === name.toLowerCase());
   if (!same && templates.length >= MAX_TEMPLATES) throw new Error(`Du kan ha högst ${MAX_TEMPLATES} mallar. Ta bort någon först.`);
-  const template: StyleTemplate = { ...style, id: same?.id ?? `t-${crypto.randomBytes(6).toString('hex')}`, name };
+  const origin = sanitizeOrigin(rawOrigin);
+  const template: StyleTemplate = { ...style, id: same?.id ?? `t-${crypto.randomBytes(6).toString('hex')}`, name, ...(origin ? { origin } : {}) };
   save({ ...brand, templates: same ? templates.map((t) => (t.id === same.id ? template : t)) : [...templates, template] });
   return template;
 }

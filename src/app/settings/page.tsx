@@ -32,6 +32,7 @@ import {
 } from '@/components/brandApi';
 import { StyleSample } from '@/components/CaptionStyleParts';
 import { FileButton } from '@/components/FileButton';
+import { StyleFromVideo } from '@/components/StyleFromVideo';
 import { useCaptionFonts } from '@/components/editor/useCaptionFonts';
 import { captionFont, cssFontFamily, setCustomFonts } from '@/lib/edit/fonts';
 import { captionPreset } from '@/lib/edit/presets';
@@ -201,8 +202,9 @@ export default function SettingsPage() {
           <Card
             id="mallar"
             title="Mallar"
-            intro="Fler sparade stilar, med egna namn, till exempel en per kanal eller serie. Spara en i redigeraren med Spara ... och ett namn."
+            intro="Fler sparade stilar, med egna namn, till exempel en per kanal eller serie. Spara en i redigeraren med Spara ... och ett namn, eller gör en av en video du gillar."
           >
+            <StyleFromVideo onDone={() => fetchBrand().then(showBrand).catch(() => undefined)} />
             {(brand.templates ?? []).length === 0 ? (
               <p className="text-sm text-gray-400">Inga mallar än.</p>
             ) : (
@@ -214,6 +216,7 @@ export default function SettingsPage() {
                     </div>
                     <div className="text-sm mr-auto min-w-0">
                       <p className="font-medium truncate">{t.name}</p>
+                      {t.origin && <p className="text-xs text-gray-500 truncate">Från video: {t.origin.from}</p>}
                       <p className="text-xs text-gray-400">
                         {captionPreset(t.captions.preset).label}, {captionFont(t.captions.font).label}
                         {t.progress?.enabled ? ' · förloppsstapel' : ''}

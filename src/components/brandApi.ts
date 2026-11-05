@@ -167,3 +167,31 @@ export const deleteTemplate = (id: string) =>
   call<{ brand: BrandInfo }>(`/api/brand/templates/${encodeURIComponent(id)}`, { method: 'DELETE' }, 'Kunde inte ta bort mallen.').then(
     (b) => b.brand,
   );
+
+export interface StyleJob {
+  id: string;
+  status: 'working' | 'done' | 'error';
+  step: string;
+  error?: string;
+  template?: import('@/lib/edit/types').StyleTemplate;
+}
+
+/** Make a template from a video: a link (TikTok, YouTube ...) or a file. */
+export const startStyleFromVideo = (input: { url?: string; file?: File; name?: string }) => {
+  if (input.file) {
+    const params = new URLSearchParams({ filename: input.file.name, ...(input.name ? { name: input.name } : {}) });
+    return call<{ job: StyleJob }>(
+      `/api/brand/templates/from-video?${params}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: input.file },
+      'Kunde inte ladda upp videon.',
+    ).then((b) => b.job);
+  }
+  return call<{ job: StyleJob }>(
+    '/api/brand/templates/from-video',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: input.url, name: input.name }) },
+    'Kunde inte starta.',
+  ).then((b) => b.job);
+};
+
+export const fetchStyleJob = (id: string) =>
+  call<{ job: StyleJob }>(`/api/brand/templates/from-video/${id}`, { cache: 'no-store' }, 'Kunde inte läsa hur det går.').then((b) => b.job);

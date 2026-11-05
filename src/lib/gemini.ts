@@ -18,6 +18,10 @@ import { openRouterJson } from './openrouter';
 import { EMOJIS, knownEmoji, MAX_EMOJIS } from './edit/emoji';
 import type { Chapter, ClipScores, ClipSuggestion, PostPlatform, TranscriptSegment, VisualKind, VisualMoment } from './types';
 import { cleanChapters, cleanPosts, MIN_CHAPTER_SECONDS, MIN_CHAPTERS, POST_PLATFORMS } from './chapters';
+import { CAPTION_PRESETS } from './edit/presets';
+import { CAPTION_FONTS } from './edit/fonts';
+import { ZOOM_LEVELS } from './edit/zoom';
+import { VIDEO_STYLE_CHOICES } from './edit/videoStyle';
 
 let cachedClient: GoogleGenAI | null = null;
 
@@ -625,6 +629,101 @@ ${said.slice(0, 6000)}`;
   const posts = cleanPosts(raw);
   if (!posts) throw new Error('AI:n svarade inte med text för alla plattformar. Försök igen.');
   return posts;
+}
+
+const enumOf = (values: readonly string[]): Schema => ({ type: Type.STRING, enum: [...values] });
+
+const videoStyleSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    name: { type: Type.STRING },
+    summary: { type: Type.STRING },
+    aspect: enumOf(VIDEO_STYLE_CHOICES.aspect),
+    layout: enumOf(VIDEO_STYLE_CHOICES.layout),
+    captions_shown: { type: Type.BOOLEAN },
+    caption_preset: enumOf(CAPTION_PRESETS.map((p) => p.id)),
+    caption_font: enumOf(CAPTION_FONTS.map((f) => f.id)),
+    caption_uppercase: { type: Type.BOOLEAN },
+    caption_words: { type: Type.INTEGER },
+    caption_size: enumOf(VIDEO_STYLE_CHOICES.captionSize),
+    caption_position: enumOf(VIDEO_STYLE_CHOICES.captionPosition),
+    text_color: { type: Type.STRING },
+    highlight_color: { type: Type.STRING },
+    emphasis_color: { type: Type.STRING },
+    emojis: enumOf(VIDEO_STYLE_CHOICES.emojis),
+    hook_title: enumOf(VIDEO_STYLE_CHOICES.hookTitle),
+    fillers_removed: { type: Type.BOOLEAN },
+    pauses_removed: { type: Type.BOOLEAN },
+    zoom_level: enumOf(ZOOM_LEVELS.map((z) => z.id)),
+    zoom_style: enumOf(VIDEO_STYLE_CHOICES.zoomStyle),
+    cut_transition: enumOf(VIDEO_STYLE_CHOICES.cutTransition),
+    cut_transition_other: { type: Type.STRING },
+    broll: enumOf(VIDEO_STYLE_CHOICES.broll),
+    music: { type: Type.BOOLEAN },
+    music_mood: { type: Type.STRING },
+    music_volume: enumOf(VIDEO_STYLE_CHOICES.musicVolume),
+    sound_effects: { type: Type.ARRAY, items: { type: Type.STRING } },
+    progress_bar: { type: Type.BOOLEAN },
+    progress_color: { type: Type.STRING },
+    progress_position: enumOf(VIDEO_STYLE_CHOICES.progressPosition),
+    other_effects: { type: Type.ARRAY, items: { type: Type.STRING } },
+  },
+};
+videoStyleSchema.required = Object.keys(videoStyleSchema.properties ?? {});
+videoStyleSchema.propertyOrdering = Object.keys(videoStyleSchema.properties ?? {});
+
+/**
+ * Watch and listen to a video someone likes, and describe how it is edited
+ * in our own settings (for "Mall från video"). Gemini sees the picture and
+ * hears the music, sound effects and pace, which a still frame can't show.
+ */
+export async function analyzeVideoStyle(videoPath: string, durationSec: number): Promise<unknown> {
+  let uploaded: UploadedFile | undefined;
+  try {
+    uploaded = await uploadMedia(videoPath, 'video/mp4');
+    const prompt = `You are a short-form video editor. Watch AND listen to this ${durationSec.toFixed(0)} second \
+video and describe its editing style - how it is edited, not what it is about - so that other clips \
+can be edited the same way with our app. Answer only with our app's settings.
+
+- "name": a short Swedish name for the style (2-4 words, no quotes), describing the style, not the \
+person or channel. "summary": 2-3 Swedish sentences on what makes the style recognisable.
+- "aspect" and "layout": the frame format, and how people are framed (follow_speaker = crop that \
+follows whoever talks; full_frame = the whole picture with blurred bars; split_two = two people \
+stacked; facecam_game = webcam over gameplay; screen_face = screen recording with a face; group = \
+3-4 people in their own boxes).
+- Captions (the burned-in subtitles): "captions_shown"; "caption_preset" the closest of: \
+${CAPTION_PRESETS.map((p) => `${p.id} (${p.description})`).join('; ')}. "caption_font" the closest \
+of: ${CAPTION_FONTS.map((f) => `${f.id} (${f.label})`).join(', ')}. "caption_uppercase"; \
+"caption_words" how many words are on screen at once; "caption_size"; "caption_position"; \
+"text_color", "highlight_color" (the word being said) and "emphasis_color" (stressed key words) \
+as #RRGGBB; "emojis" how often emojis pop up over the captions.
+- "hook_title": a headline at the top: none, only the first seconds, or the whole clip.
+- Pace: "fillers_removed" (no eh, um ...), "pauses_removed" (tight jump cuts, no breaths between \
+sentences).
+- "zoom_level" and "zoom_style": punch-ins on the speaker (smooth glide or hard jump cut).
+- "cut_transition" at the jump cuts: none, punch_zoom (every second part slightly closer), flash \
+(a short white flash) or other (then describe it in "cut_transition_other", else leave it empty).
+- "broll": how often stock footage or other images cover the speaker.
+- Sound: "music" if there is background music, its "music_mood" (genre, mood, tempo, in Swedish) \
+and "music_volume" under the voice; "sound_effects" every kind of sound effect you hear (whoosh, \
+pop, ding, record scratch ...), in Swedish, empty if none.
+- "progress_bar", "progress_color" (#RRGGBB) and "progress_position": a bar showing how far into \
+the clip you are.
+- "other_effects": anything else that makes the style recognisable and isn't covered above \
+(colour grading, stickers, animated arrows, glitches, split text, frames ...), in Swedish, one \
+short phrase each. Empty if nothing.`;
+    return await generateJson<unknown>(
+      config.visionModel,
+      [createPartFromUri(uploaded.uri, uploaded.mimeType), prompt],
+      videoStyleSchema,
+      ThinkingLevel.LOW,
+      MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+    );
+  } catch (err) {
+    throw explainError(err, config.visionModel, 'vision');
+  } finally {
+    if (uploaded) client().files.delete({ name: uploaded.name }).catch(() => undefined);
+  }
 }
 
 /** Short hook titles for the top of a clip, from what is said in it. */

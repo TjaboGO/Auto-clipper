@@ -335,6 +335,13 @@ export function UploadForm() {
                 }))}
                 looks={BUILT_IN_LOOKS.map((look) => ({ look, onSelect: () => set({ captionPreset: look.id }) }))}
               />
+              <p className="text-xs text-gray-400 mt-2">
+                Gillar du stilen i en annan video?{' '}
+                <Link href="/settings#mallar" className="text-accent-400 hover:text-accent-300">
+                  Gör en mall av den
+                </Link>
+                .
+              </p>
             </Field>
             <Field label="AI:n tittar på videon">
               <div className="grid grid-cols-3 gap-1.5">
